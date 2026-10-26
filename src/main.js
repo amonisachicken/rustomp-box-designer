@@ -21,6 +21,8 @@ import {
   distributeMoves,
   duplicate,
   unionBox,
+  toggleDy,
+  syncTogglePivot,
 } from "./model.js";
 import { panelSvg, uiToml, parseParams, num } from "./exporter.js";
 
@@ -31,7 +33,7 @@ const state = {
   selection: [], // 选中的元素 id（多选）
   mode: "edit",
   values: {}, // 预览态：元素 id → 数值/布尔
-  guides: [], // 拖动时命中的吸附线（只画不导）
+  guides: [], // 预留：吸附参考线（拖动已禁用，暂不产生）
   bypassed: false, // 预览态的旁通开关（点脚踏切换，同真插件）
   focus: null, // 焦点图层（null = 不聚焦，全部可编辑）
   past: [], // 撤销栈（文档快照）
@@ -97,14 +99,18 @@ function selectionOverlay() {
 
 const selectedElements = () => state.doc.elements.filter((e) => state.selection.includes(e.id));
 
-/** 是否可编辑：所在图层没隐藏，且（没有焦点 或 就是焦点图层） */
+/** 是否可编辑：有焦点、所在图层没隐藏、且就是焦点图层 */
 function canEdit(el) {
-  return editable(state.doc, el) && (!state.focus || layerOf(el) === state.focus);
+  return !!state.focus && editable(state.doc, el) && layerOf(el) === state.focus;
 }
 
-/** 不是焦点的图层 → 传给导出器做虚化 */
-const dimLayers = () =>
-  state.focus ? new Set(LAYERS.map((l) => l.id).filter((id) => id !== state.focus)) : null;
+/**
+ * 不是焦点的图层 → 传给导出器做虚化。
+ *
+ * **没有焦点时全部虚化**（焦点是"当前在改哪一层"的唯一入口），
+ * 这样不会出现"以为在改 A 层，其实动的是 B 层"。
+ */
+const dimLayers = () => new Set(LAYERS.map((l) => l.id).filter((id) => id !== state.focus));
 
 /** 只保留"没被隐藏"的元素给渲染用（导出不走这里，导出是另一条路径） */
 function visibleDoc() {
@@ -180,7 +186,7 @@ function renderLibrary() {
   };
   const html = Object.entries(groups)
     .map(([kind, items]) => {
-      const dimmed = state.focus && KIND_LAYER[kind] !== state.focus;
+      const dimmed = KIND_LAYER[kind] !== state.focus;
       const cells = items
         .map((it) => {
           // 拨杆这一组是「pair 名」，缩略图取 up 态；其它组直接是素材 id
@@ -197,7 +203,8 @@ function renderLibrary() {
   $("#assetList").innerHTML = html;
 }
 
-$("#assetList").addEventListener("click", (e) => {
+// 双击新建（单击只用来"看"，避免误触）
+$("#assetList").addEventListener("dblclick", (e) => {
   const cell = e.target.closest("[data-add]");
   if (!cell) return;
   addElement(cell.dataset.add, cell.dataset.id);
@@ -253,19 +260,28 @@ $("#layerList").addEventListener("click", (e) => {
   setFocus(id); // 点名字/行 = 聚焦该图层
 });
 
-/** 新元素放在画布中央（毫米），避免一加就超出边界 */
-const centerAt = (lens) => [+(state.doc.canvas.canvas_mm[0] / 2).toFixed(2), +(state.doc.canvas.canvas_mm[1] / 2 + lens).toFixed(2)];
+/** 画布中心（毫米，取整）——新元素一律出现在这里 */
+const canvasCenter = () => [
+  Math.floor(state.doc.canvas.canvas_mm[0] / 2),
+  Math.floor(state.doc.canvas.canvas_mm[1] / 2),
+];
 
 function addElement(kind, id) {
   const d = state.doc;
-  const [cx, cy] = centerAt(0);
+  const [cx, cy] = canvasCenter();
   const firstParam = d.params[0]?.id ?? "";
   let el;
+  // 一律以画布中心为基准（贴图类按中心反推左上角）
   if (kind === "knob") el = factory.knob(d, { asset: id, param: firstParam, center: [cx, cy] });
-  else if (kind === "toggle") el = factory.toggle(d, { pair: id, param: firstParam, x: cx - 4, y: cy - 4 });
-  else if (kind === "led") el = factory.led(d, { asset: id, center: [cx, cy] });
+  else if (kind === "toggle") {
+    const up = byId(SWITCH_PAIRS[id].up);
+    el = factory.toggle(d, { pair: id, param: firstParam, x: cx - Math.floor(up.size_mm[0] / 2), y: cy - Math.floor(up.size_mm[1] / 2) });
+  } else if (kind === "led") el = factory.led(d, { asset: id, center: [cx, cy] });
   else if (kind === "button") el = factory.button(d, { asset: id, param: firstParam, center: [cx, cy] });
-  else el = factory.image(d, { asset: id, x: cx, y: cy });
+  else {
+    const a = byId(id);
+    el = factory.image(d, { asset: id, x: cx - Math.floor(a.size_mm[0] / 2), y: cy - Math.floor(a.size_mm[1] / 2) });
+  }
   commit();
   d.elements.push(el);
   state.selection = [el.id];
@@ -326,7 +342,7 @@ $("#stage").addEventListener("pointerdown", (ev) => {
     return;
   }
 
-  // 编辑模式：选中 + 开始拖动
+  // 编辑模式：只做选中（拖动已禁用）
   if (id && el && canEdit(el)) {
     // Shift/⌘ 点：加入或移除选区
     if (ev.shiftKey || ev.metaKey || ev.ctrlKey) {
@@ -344,14 +360,7 @@ $("#stage").addEventListener("pointerdown", (ev) => {
     render();
     return;
   }
-  // Alt+拖动 = 复制一份再拖
-  if (ev.altKey) {
-    commit();
-    const copies = duplicate(state.doc, selectedElements(), [0, 0]);
-    state.doc.elements.push(...copies);
-    state.selection = copies.map((c) => c.id);
-  }
-  drag = { kind: "move", ids: [...state.selection], last: [mx, my], moved: false, committed: false };
+  // 拖动已禁用（手感不可控）：位置靠方向键微调 + 右侧属性面板精确输入
   ev.preventDefault();
 });
 
@@ -367,30 +376,6 @@ $("#stage").addEventListener("pointermove", (ev) => {
     return;
   }
 
-  const els = state.doc.elements.filter((e) => drag.ids.includes(e.id));
-  if (!els.length) return;
-  const step = ev.shiftKey ? 0.01 : (state.doc.view?.snap_mm ?? 0.5); // Shift 精调
-  const [dx, dy] = [snap(mx, step) - snap(drag.last[0], step), snap(my, step) - snap(drag.last[1], step)];
-  if (dx || dy) {
-    if (!drag.committed) {
-      commit(); // 一次拖动只记一步撤销
-      drag.committed = true;
-    }
-    for (const el of els) move(el, dx, dy);
-
-    // 吸附到中线/边/其它控件（按住 ⌘ 关闭）
-    state.guides = [];
-    if (!ev.metaKey && state.doc.view?.snap_to_targets !== false) {
-      const t = snapTargets(state.doc, els[0]);
-      if (t.dx || t.dy) for (const el of els) move(el, t.dx, t.dy);
-      state.guides = els.length === 1 ? t.guides : [];
-    }
-
-    drag.last = [snap(mx, step), snap(my, step)];
-    drag.moved = true;
-    render();
-    renderInspector();
-  }
 });
 
 window.addEventListener("pointerup", () => {
@@ -538,7 +523,8 @@ function renderInspector() {
   $("#insp").innerHTML = body;
 
   // ---- 事件 ----
-  $("#insp").addEventListener("input", onInspectorInput, { once: true });
+  // 注意：监听器在启动时统一挂一次（见文件末尾），这里不能再挂 `{once:true}`，
+  // 否则第一次输入之后整个面板就"死"了（历史 bug）。
   for (const b of document.querySelectorAll("[data-align],[data-align-canvas]")) {
     b.addEventListener("click", () => {
       const mode = b.dataset.align ?? b.dataset.alignCanvas;
@@ -583,17 +569,19 @@ function renderInspector() {
 function onInspectorInput(ev) {
   const t = ev.target;
   const d = state.doc;
-  commit();
   const el = d.elements.find((e) => e.id === state.selection[0]);
+
+  // 坐标一律**向下取整**（毫米整数，做面板时对位更可靠）
+  const int = (v) => Math.floor(Number(v));
 
   if (t.dataset.canvas !== undefined) {
     const key = t.dataset.canvas;
     if (key === "0" || key === "1") {
-      d.canvas.canvas_mm[Number(key)] = Number(t.value);
+      d.canvas.canvas_mm[Number(key)] = int(t.value);
       d.canvas.window_px = d.canvas.canvas_mm.map((v) => Math.round(v * 6));
     } else if (key === "bg") d.canvas.background = t.value;
     else if (key === "ink") d.canvas.ink = t.value;
-    else if (key === "px") d.canvas.px_per_mm = Number(t.value);
+    else if (key === "px") d.canvas.px_per_mm = int(t.value);
     else if (key === "preset") {
       const p = PRESETS[t.value];
       if (p) {
@@ -604,7 +592,6 @@ function onInspectorInput(ev) {
       }
     }
     render();
-    renderInspector();
     return;
   }
 
@@ -613,20 +600,27 @@ function onInspectorInput(ev) {
   if (!key) return;
 
   if (t.dataset.vec) {
-    el[t.dataset.vec][Number(key)] = Number(t.value);
-  } else if (key === "y_up") {
-    // 两态 y 必须一致（D-006：运行时归一化后不跳）
-    el.y_up = Number(t.value);
-    el.y_down = Number(t.value);
-  } else if (key === "press_scale" || key.startsWith("radius") || key === "travel_deg" || key === "rot") {
+    // center / pivot 的分量
+    el[t.dataset.vec][Number(key)] = int(t.value);
+    if (t.dataset.vec === "center" || t.dataset.vec === "pivot") {
+      if (el.kind === "toggle" && t.dataset.vec === "pivot") syncTogglePivot(el);
+    }
+  } else if (key === "x" || key === "y" || key === "y_up") {
+    el[key] = int(t.value);
+    // 拨杆：y_down 与 pivot 必须跟着（六边形中心补偿）
+    if (el.kind === "toggle") syncTogglePivot(el);
+  } else if (key === "w" || key === "h" || key === "rx") {
+    el[key] = int(t.value);
+  } else if (key === "radius" || key === "press_scale" || key === "travel_deg" || key === "rot") {
     el[key] = Number(t.value);
-  } else if (["x", "y", "w", "h", "rx", "strokeWidth"].includes(key)) {
+  } else if (key === "strokeWidth") {
     el[key] = Number(t.value);
   } else {
-    el[key] = t.value;
+    el[key] = t.value; // param / asset / layer / fill / stroke
   }
   render();
 }
+
 
 // ---------- 顶栏 ----------
 function setMode(mode) {
@@ -635,7 +629,7 @@ function setMode(mode) {
   document.body.classList.toggle("preview", mode === "preview");
   for (const b of document.querySelectorAll("#mode button")) b.classList.toggle("on", b.dataset.mode === mode);
   $("#stHint").textContent =
-    mode === "preview" ? "拖旋钮改值 · 点拨杆/LED 切换 · 按住脚踏看按下反馈 · Tab 切回编辑" : "点素材添加 · 拖动移动 · 方向键微调 · ⌫ 删除 · Tab 切模式";
+    mode === "preview" ? "拖旋钮改值 · 点拨杆/LED 切换 · 按住脚踏看按下反馈 · Tab 切回编辑" : "点图层聚焦 · 双击素材新建 · 方向键微调（Shift 1mm）· ⌫ 删除 · Tab 切模式";
   render();
 }
 
@@ -708,6 +702,16 @@ $("#btnExport").addEventListener("click", () => {
 });
 $("#expClose").addEventListener("click", () => $("#dlgExport").close());
 
+// ---------- 属性面板事件（只挂一次） ----------
+$("#insp").addEventListener("focusin", (e) => {
+  // 每次"开始编辑一个字段"记一步撤销（而不是每敲一个字）
+  if (e.target.matches('input, select')) commit();
+});
+$("#insp").addEventListener("input", onInspectorInput);
+$("#insp").addEventListener("change", (e) => {
+  if (e.target.matches("select")) renderInspector();
+});
+
 // ---------- 启动 ----------
 await loadAssets();
 renderLibrary();
@@ -715,6 +719,7 @@ renderLayers();
 render();
 renderInspector();
 setMode("edit");
+$("#stHint").textContent = "先点左下「图层」里的一行聚焦（之后该层元素才能选中/编辑；双击素材库新建）";
 
 const query = new URLSearchParams(location.search);
 if (query.has("demo")) {
@@ -742,30 +747,29 @@ if (query.has("selftest")) {
   })();
   const toml = uiToml(d);
   const svg = panelSvg(d, state.assets, { controls: true, values: {} });
-  // 真实指针事件走一遍"选中 + 拖动"（用户报过拖不动，必须由这条路验证）
-  const dragOk = (() => {
-    // 拖"当前选中的那个"（焦点模式下只有焦点图层可拖，最后一个加的正好在焦点里）
+  // 位置/尺寸走"右侧属性面板"的 input 事件（拖动已禁用，这是唯一的精确改法）
+  const inputOk = (() => {
     const knob = d.elements.find((e) => e.id === state.selection[0]);
-    const node = document.querySelector(`[data-elid="${knob.id}"]`);
-    if (!node) return "no-node";
-    const r = node.getBoundingClientRect();
-    const at = (dx, dy) => ({ clientX: r.left + r.width / 2 + dx, clientY: r.top + r.height / 2 + dy, bubbles: true });
-    const before = [...knob.center];
-    node.dispatchEvent(new PointerEvent("pointerdown", at(0, 0)));
-    $("#stage").dispatchEvent(new PointerEvent("pointermove", at(9, 9)));
-    window.dispatchEvent(new PointerEvent("pointerup", at(9, 9)));
-    const after = knob.center;
-    return after[0] !== before[0] || after[1] !== before[1] ? true : "stuck";
+    if (!knob) return "no-selection";
+    renderInspector();
+    const field = document.querySelector('#insp input[data-vec="center"][data-key="0"]');
+    if (!field) return "no-field";
+    const before = knob.center[0];
+    field.value = String(before + 12.7);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    const after = knob.center[0];
+    // 小数要向下取整
+    return after === Math.floor(before + 12.7) ? true : `stuck:${before}->${after}`;
   })();
 
   const ok =
     added === 3 &&
     moved &&
-    dragOk === true &&
+    inputOk === true &&
     toml.includes("[[ui.knobs]]") &&
     toml.includes("[[ui.toggles]]") &&
     toml.includes("[[ui.leds]]") &&
     svg.startsWith("<svg") &&
     svg.includes('data-control="knob"');
-  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} drag=${dragOk} toml=${toml.length}B svg=${svg.length}B`;
+  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} input=${inputOk} toml=${toml.length}B svg=${svg.length}B`;
 }

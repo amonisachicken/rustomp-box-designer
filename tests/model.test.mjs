@@ -15,6 +15,11 @@ import {
   layerState,
   editable,
   snapTargets,
+  toggleDy,
+  syncTogglePivot,
+  alignMoves,
+  distributeMoves,
+  duplicate,
 } from "../src/model.js";
 
 const doc = () => newDoc({ params: [{ id: "gain" }, { id: "bypass" }] });
@@ -159,4 +164,22 @@ test("吸附：也会对齐到其它控件的中线", () => {
   const t = snapTargets(d, b, 1.2);
   move(b, t.dx, t.dy);
   assert.equal(b.center[0], 20);
+});
+
+test("syncTogglePivot：改 y_up 后 y_down 与 pivot 自动跟随（六边形仍重合）", () => {
+  const d = doc();
+  const t = factory.toggle(d, { param: "gain", x: 20, y: 30 });
+  d.elements.push(t);
+  const dy = toggleDy(t);
+  assert.ok(dy > 0.4, `两态 y 差应≈0.54，实际 ${dy}`);
+  t.y_up = 41;
+  syncTogglePivot(t);
+  assert.equal(t.y_down, +(41 + dy).toFixed(2));
+  const up = byId(t.image_up);
+  const down = byId(t.image_down);
+  const cyUp = t.y_up + up.hex_center_mm[1];
+  const cyDown = t.y_down + down.hex_center_mm[1];
+  assert.ok(Math.abs(cyUp - cyDown) < 0.01, `六边形中心差 ${(cyUp - cyDown).toFixed(3)}`);
+  assert.ok(Math.abs(t.pivot[1] - cyUp) < 0.01);
+  assert.deepEqual(validate(d), []);
 });

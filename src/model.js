@@ -89,7 +89,6 @@ export const factory = {
     const h = up.size_mm[1];
     const hx = up.hex_center_mm?.[0] ?? w / 2;
     const hy = up.hex_center_mm?.[1] ?? h / 2;
-    const dy = +((up.hex_center_mm?.[1] ?? 0) - (down.hex_center_mm?.[1] ?? 0)).toFixed(4);
     return {
       id: uid(doc, "t"),
       kind: "toggle",
@@ -99,7 +98,7 @@ export const factory = {
       // x = 贴图左边；y_up / y_down = 各自贴图的顶边（差 dy，使六边形中心重合）
       x,
       y_up: y,
-      y_down: +(y + dy).toFixed(2),
+      y_down: +(y + +((up.hex_center_mm?.[1] ?? 0) - (down.hex_center_mm?.[1] ?? 0)).toFixed(4)).toFixed(2),
       width: w,
       height: h,
       pivot: [+(x + hx).toFixed(2), +(y + hy).toFixed(2)], // 轴心 = 六边形中心
@@ -154,6 +153,26 @@ export const factory = {
     return { id: uid(doc, "r"), kind: "rect", x, y, w, h, rx, fill, stroke, strokeWidth, layer };
   },
 };
+
+/**
+ * 拨杆两态的 y 差（让六边形中心重合）：`y_down = y_up + toggleDy(el)`
+ *
+ * 素材是镜像画的（上半六边形偏下、下半偏上），所以这个差值不是 0。
+ */
+export function toggleDy(el) {
+  const up = byId(el.image_up);
+  const down = byId(el.image_down);
+  return +(((up?.hex_center_mm?.[1] ?? 0) - (down?.hex_center_mm?.[1] ?? 0))).toFixed(4);
+}
+
+/** 改过 x / y_up 之后，把 pivot 重新落到六边形中心上 */
+export function syncTogglePivot(el) {
+  const up = byId(el.image_up);
+  const hx = up?.hex_center_mm?.[0] ?? el.width / 2;
+  const hy = up?.hex_center_mm?.[1] ?? el.height / 2;
+  el.y_down = +(el.y_up + toggleDy(el)).toFixed(2);
+  el.pivot = [+(el.x + hx).toFixed(2), +(el.y_up + hy).toFixed(2)];
+}
 
 /** 素材种类 → 图层（素材库里要按焦点虚化） */
 export const KIND_LAYER = {
