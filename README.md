@@ -27,7 +27,8 @@
 | 与 rustomp 的**面板契约**（`rustomp.toml [assets]/[ui]` 全字段） | ✅ `docs/01-contract-panel-toml.md` |
 | 运行时语义（`rustomp-gui::PanelSpec` 怎么画、坐标/缩放/贴图生命周期） | ✅ `docs/02-runtime-panelspec.md` |
 | 素材规范（PNG、@2x、透明通道、命名、尺寸关系） | ✅ `docs/03-assets.md` |
-| **待约定的实现规范**（技术栈、文件格式、控件库、导出方式…） | ✅ `docs/04-open-questions.md`（**下一次讨论的议程**） |
+| **待约定的实现规范**（技术栈、文件格式、控件库、导出方式…） | ✅ `docs/04-open-questions.md` |
+| **方案评审**（图层/图形库/mm 坐标/画布预设）与 v0.2 规范草案 | ✅ `docs/05-spec-review.md`（含 6 个待拍板项） |
 | 代码 | ⬜ 未开始 |
 
 ---
