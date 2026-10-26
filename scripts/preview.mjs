@@ -2,7 +2,7 @@
 // 渲染「预览图」：带旋钮/拨杆/LED/按下反馈，用来肉眼验收渲染路径（等同浏览器里看到的）
 //
 // 用法：node scripts/preview.mjs examples/sparklin.box.json --out /tmp/preview.png
-//       [--value k1=0.75] [--value t1=on] [--value l1=on] [--value b1=pressed]
+//       [--value k1=0.75] [--value t1=on] [--value l1=on] [--value b1=pressed] [--bypass]
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -37,7 +37,8 @@ for (const [, id, , file] of manifest.matchAll(/"id": "([^"]+)",\s*"kind": "([^"
   assets[id] = readFileSync(join(ROOT, file), "utf8");
 }
 
-const svg = panelSvg(doc, assets, { controls: true, values });
+const bypassed = args.includes("--bypass");
+const svg = panelSvg(doc, assets, { controls: true, values, bypassed });
 const svgPath = out.replace(/\.png$/, ".svg");
 writeFileSync(svgPath, svg);
 const width = Math.round(doc.canvas.canvas_mm[0] * doc.canvas.px_per_mm);

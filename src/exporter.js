@@ -29,7 +29,7 @@ const flattenable = (el) => ["rect", "image", "led", "button"].includes(el.kind)
  * @param opts.values    预览时的参数值 { [elementId]: 0..1 | bool }
  */
 export function panelSvg(doc, assets, opts = {}) {
-  const { controls = false, values = {} } = opts;
+  const { controls = false, values = {}, bypassed = false } = opts;
   const [W, H] = doc.canvas.canvas_mm;
   const out = [];
   out.push(
@@ -48,7 +48,9 @@ export function panelSvg(doc, assets, opts = {}) {
 
   if (controls) {
     // 之后按运行时的绘制顺序：LED → 旋钮 → 拨杆 → 脚踏按下反馈
-    for (const el of doc.elements.filter((e) => e.kind === "led")) out.push(ledCircle(el, values[el.id] ?? el.lit));
+    for (const el of doc.elements.filter((e) => e.kind === "led")) {
+      out.push(ledCircle(el, values[el.id] ?? el.lit, bypassed));
+    }
     for (const el of doc.elements.filter((e) => e.kind === "knob")) out.push(knobSprite(el, assets, values));
     for (const el of doc.elements.filter((e) => e.kind === "toggle")) out.push(toggleSprite(el, assets, values));
     for (const el of doc.elements.filter((e) => e.kind === "button")) {
@@ -90,8 +92,20 @@ function flattenElement(el, assets, values) {
 /** 给元素打上 data-elid，预览里用于命中测试 */
 const withAttrs = (svg, id) => svg.replace("<svg ", `<svg data-elid="${esc(id)}" `);
 
-function ledCircle(el, lit) {
-  const color = lit ? el.on_color : el.off_color;
+/**
+ * 旁通态的灯色：照抄运行时（`rustomp-gui::led_grey`）—— 去色 + 抬亮度到"没通电的灰灯珠"。
+ * 灯表示"这台效果器在不在工作"，所以旁通时不跟随音频闪。
+ */
+export function greyColor(offHex) {
+  const h = offHex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  const l = Math.round(lum * 0.6 + 90);
+  return `rgb(${l},${l},${l})`;
+}
+
+function ledCircle(el, lit, bypassed = false) {
+  const color = bypassed ? greyColor(el.off_color) : lit ? el.on_color : el.off_color;
   return (
     `<circle data-elid="${esc(el.id)}" data-control="led" cx="${num(el.center[0])}" cy="${num(el.center[1])}" ` +
     `r="${num(el.radius)}" fill="${esc(color)}"/>`

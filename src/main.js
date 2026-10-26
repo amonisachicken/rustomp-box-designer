@@ -16,6 +16,10 @@ import {
   layerState,
   editable,
   snapTargets,
+  alignMoves,
+  distributeMoves,
+  duplicate,
+  unionBox,
 } from "./model.js";
 import { panelSvg, uiToml, parseParams, num } from "./exporter.js";
 
@@ -23,10 +27,11 @@ const $ = (s) => document.querySelector(s);
 const state = {
   doc: newDoc({ name: "未命名面板" }),
   assets: {}, // id → svg 文本
-  selected: null, // 元素 id
+  selection: [], // 选中的元素 id（多选）
   mode: "edit",
   values: {}, // 预览态：元素 id → 数值/布尔
   guides: [], // 拖动时命中的吸附线（只画不导）
+  bypassed: false, // 预览态的旁通开关（点脚踏切换，同真插件）
   past: [], // 撤销栈（文档快照）
   future: [], // 重做栈
 };
@@ -58,8 +63,9 @@ function render() {
   const svg = panelSvg(doc, state.assets, {
     controls: true,
     values: state.mode === "preview" ? state.values : {},
+    bypassed: state.mode === "preview" && state.bypassed,
   });
-  stage.innerHTML = svg + (state.selected ? selectionOverlay() : "") + overlay();
+  stage.innerHTML = svg + selectionOverlay() + overlay();
   $("#stage svg").setAttribute("preserveAspectRatio", "xMidYMid meet");
 
   $("#stCount").textContent = state.doc.elements.length;
@@ -70,11 +76,23 @@ function render() {
 }
 
 function selectionOverlay() {
-  const el = state.doc.elements.find((e) => e.id === state.selected);
-  if (!el) return "";
-  const b = bbox(el);
-  return `<rect class="sel" x="${num(b.x - 1)}" y="${num(b.y - 1)}" width="${num(b.w + 2)}" height="${num(b.h + 2)}" rx="1.5"/>`;
+  const els = selectedElements();
+  if (!els.length) return "";
+  const out = els.map((el) => {
+    const b = bbox(el);
+    return `<rect class="sel" x="${num(b.x - 1)}" y="${num(b.y - 1)}" width="${num(b.w + 2)}" height="${num(b.h + 2)}" rx="1.5"/>`;
+  });
+  // 多选时再画一个联合外接框
+  if (els.length > 1) {
+    const u = unionBox(els);
+    out.push(
+      `<rect class="sel union" x="${num(u.x - 1.5)}" y="${num(u.y - 1.5)}" width="${num(u.w + 3)}" height="${num(u.h + 3)}" rx="2"/>`,
+    );
+  }
+  return out.join("");
 }
+
+const selectedElements = () => state.doc.elements.filter((e) => state.selection.includes(e.id));
 
 /** 只保留"没被隐藏"的元素给渲染用（导出不走这里，导出是另一条路径） */
 function visibleDoc() {
@@ -123,7 +141,7 @@ function undo() {
   if (!state.past.length) return;
   state.future.push(JSON.stringify(state.doc));
   state.doc = load(state.past.pop());
-  state.selected = null;
+  state.selection = [];
   render();
   renderInspector();
 }
@@ -132,7 +150,7 @@ function redo() {
   if (!state.future.length) return;
   state.past.push(JSON.stringify(state.doc));
   state.doc = load(state.future.pop());
-  state.selected = null;
+  state.selection = [];
   render();
   renderInspector();
 }
@@ -216,7 +234,7 @@ function addElement(kind, id) {
   else el = factory.image(d, { asset: id, x: cx, y: cy });
   commit();
   d.elements.push(el);
-  state.selected = el.id;
+  state.selection = [el.id];
   render();
   renderInspector();
 }
@@ -253,10 +271,15 @@ $("#stage").addEventListener("pointerdown", (ev) => {
       state.values[id] = !(state.values[id] ?? el.lit);
       render();
     } else if (el.kind === "button") {
-      state.values[id] = true;
+      state.values[id] = true; // 按下期间显示"按住态"贴图
       render();
       const up = () => {
         state.values[id] = false;
+        // 抬起 = 切换旁通（与真插件一致：点按切换，不是按住）
+        if (el.param === "bypass") {
+          state.bypassed = !state.bypassed;
+          $("#stHint").textContent = `预览：${state.bypassed ? "已旁通（LED 变灰、不闪）" : "已在工作"}`;
+        }
         render();
         window.removeEventListener("pointerup", up);
       };
@@ -266,13 +289,31 @@ $("#stage").addEventListener("pointerdown", (ev) => {
   }
 
   // 编辑模式：选中 + 开始拖动
-  state.selected = id && el && editable(state.doc, el) ? id : null;
+  if (id && el && editable(state.doc, el)) {
+    // Shift/⌘ 点：加入或移除选区
+    if (ev.shiftKey || ev.metaKey || ev.ctrlKey) {
+      state.selection = state.selection.includes(id)
+        ? state.selection.filter((x) => x !== id)
+        : [...state.selection, id];
+    } else if (!state.selection.includes(id)) {
+      state.selection = [id];
+    }
+  } else if (!(ev.shiftKey || ev.metaKey || ev.ctrlKey)) {
+    state.selection = [];
+  }
   renderInspector();
-  if (!state.selected) {
+  if (!state.selection.length) {
     render();
     return;
   }
-  drag = { kind: "move", id: state.selected, last: [mx, my], moved: false, committed: false };
+  // Alt+拖动 = 复制一份再拖
+  if (ev.altKey) {
+    commit();
+    const copies = duplicate(state.doc, selectedElements(), [0, 0]);
+    state.doc.elements.push(...copies);
+    state.selection = copies.map((c) => c.id);
+  }
+  drag = { kind: "move", ids: [...state.selection], last: [mx, my], moved: false, committed: false };
   ev.preventDefault();
 });
 
@@ -297,14 +338,14 @@ $("#stage").addEventListener("pointermove", (ev) => {
       commit(); // 一次拖动只记一步撤销
       drag.committed = true;
     }
-    move(el, dx, dy);
+    for (const el of els) move(el, dx, dy);
 
-    // 吸附到中线/边/其它控件（Alt 关闭）
+    // 吸附到中线/边/其它控件（按住 ⌘ 关闭）
     state.guides = [];
-    if (!ev.altKey && state.doc.view?.snap_to_targets !== false) {
-      const t = snapTargets(state.doc, el);
-      if (t.dx || t.dy) move(el, t.dx, t.dy);
-      state.guides = t.guides;
+    if (!ev.metaKey && state.doc.view?.snap_to_targets !== false) {
+      const t = snapTargets(state.doc, els[0]);
+      if (t.dx || t.dy) for (const el of els) move(el, t.dx, t.dy);
+      state.guides = els.length === 1 ? t.guides : [];
     }
 
     drag.last = [snap(mx, step), snap(my, step)];
@@ -321,19 +362,19 @@ window.addEventListener("pointerup", () => {
 
 window.addEventListener("keydown", (ev) => {
   if (ev.target.matches("input, textarea, select")) return;
-  const el = state.doc.elements.find((e) => e.id === state.selected);
+  const els = selectedElements();
   const step = ev.shiftKey ? 1 : 0.1;
   const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[ev.key];
-  if (nudge && el && editable(state.doc, el)) {
+  if (nudge && els.length && els.every((e) => editable(state.doc, e))) {
     commit();
-    move(el, ...nudge);
+    for (const el of els) move(el, ...nudge);
     render();
     renderInspector();
     ev.preventDefault();
-  } else if ((ev.key === "Delete" || ev.key === "Backspace") && el && editable(state.doc, el)) {
+  } else if ((ev.key === "Delete" || ev.key === "Backspace") && els.length) {
     commit();
-    state.doc.elements = state.doc.elements.filter((e) => e.id !== el.id);
-    state.selected = null;
+    state.doc.elements = state.doc.elements.filter((e) => !state.selection.includes(e.id));
+    state.selection = [];
     render();
     renderInspector();
     ev.preventDefault();
@@ -351,7 +392,8 @@ window.addEventListener("keydown", (ev) => {
 
 // ---------- 属性面板 ----------
 function renderInspector() {
-  const el = state.doc.elements.find((e) => e.id === state.selected);
+  const els = selectedElements();
+  const el = els.length === 1 ? els[0] : null;
   const d = state.doc;
   const params = d.params.map((p) => p.id);
   if (el && el.kind === "led") params.unshift("clip_indicator");
@@ -365,7 +407,35 @@ function renderInspector() {
     } value="${obj?.[key] ?? 0}"/></div>`;
 
   let body = "";
-  if (el) {
+  if (els.length > 1) {
+    // ---- 多选：对齐 / 分布 / 批量操作 ----
+    const u = unionBox(els);
+    body += `<h3>已选 ${els.length} 个元素</h3>`;
+    body += `<p style="font-size:11.5px;color:#6b6156;margin:0 0 6px">
+      ${u.w.toFixed(1)} × ${u.h.toFixed(1)} mm（联合外接框）</p>`;
+    const btn = (mode, label, title) => `<button data-align="${mode}" title="${title}">${label}</button>`;
+    body += `<div class="row"><label>对齐</label><span style="flex:1;display:flex;gap:3px;flex-wrap:wrap">
+      ${btn("left", "⇤", "左对齐")}${btn("hcenter", "↔", "水平居中")}${btn("right", "⇥", "右对齐")}
+      ${btn("top", "⤒", "顶对齐")}${btn("vcenter", "↕", "垂直居中")}${btn("bottom", "⤓", "底对齐")}
+    </span></div>`;
+    body += `<div class="row"><label>对画布</label><span style="flex:1;display:flex;gap:3px;flex-wrap:wrap">
+      ${["left", "hcenter", "right", "top", "vcenter", "bottom"]
+        .map((m) => `<button data-align-canvas="${m}" title="对画布${m}">${m === "hcenter" ? "H" : m === "vcenter" ? "V" : m[0].toUpperCase()}</button>`)
+        .join("")}
+    </span></div>`;
+    body += `<div class="row"><label>等间距</label><span style="flex:1;display:flex;gap:3px">
+      <button data-distribute="x">横向</button><button data-distribute="y">纵向</button></span></div>`;
+    // 批量改：同类元素共有字段
+    const kinds = [...new Set(els.map((e) => e.kind))];
+    if (kinds.length === 1 && ["knob", "led", "button"].includes(kinds[0])) {
+      body += numInput("半径 mm（全部）", "radius", els[0]);
+    }
+    if (kinds.length === 1 && kinds[0] === "image") {
+      body += numInput("旋转 °（全部）", "rot", els[0], { step: 1 });
+    }
+    body += `<div class="row" style="margin-top:10px"><span style="flex:1"></span>
+      <button id="btnDup">复制</button><button id="btnDel">删除</button></div>`;
+  } else if (el) {
     body += `<h3>${el.kind} · ${el.id}</h3>`;
     if (["knob", "toggle", "led", "button"].includes(el.kind)) {
       body += `<div class="row"><label>参数</label><select data-key="param">${paramOptions(el.param)}</select></div>`;
@@ -382,7 +452,9 @@ function renderInspector() {
     } else if (el.kind === "toggle") {
       body += numInput("x", "x");
       body += numInput("y", "y_up", el);
-      body += `<p class="hint" style="font-size:11.5px;color:#6b6156">两态 y 会自动保持相同（运行时归一化后不会跳）</p>`;
+      body += `<p class="hint" style="font-size:11.5px;color:#6b6156">y 只影响上半态；下半态自动加 ${(
+        el.y_down - el.y_up
+      ).toFixed(2)} mm 补偿，保证两态六边形中心重合</p>`;
     } else if (el.kind === "led" || el.kind === "button") {
       body += numInput("中心 x", 0, el.center, { obj: "center" }).replace('data-key="0"', 'data-key="0" data-vec="center"');
       body += numInput("中心 y", 1, el.center, { obj: "center" }).replace('data-key="1"', 'data-key="1" data-vec="center"');
@@ -429,20 +501,42 @@ function renderInspector() {
 
   // ---- 事件 ----
   $("#insp").addEventListener("input", onInspectorInput, { once: true });
+  for (const b of document.querySelectorAll("[data-align],[data-align-canvas]")) {
+    b.addEventListener("click", () => {
+      const mode = b.dataset.align ?? b.dataset.alignCanvas;
+      const target = b.dataset.alignCanvas ? "canvas" : "selection";
+      commit();
+      for (const m of alignMoves(d, els, mode, target)) {
+        const t = d.elements.find((e) => e.id === m.id);
+        if (t) move(t, m.dx, m.dy);
+      }
+      render();
+      renderInspector();
+    });
+  }
+  for (const b of document.querySelectorAll("[data-distribute]")) {
+    b.addEventListener("click", () => {
+      commit();
+      for (const m of distributeMoves(els, b.dataset.distribute)) {
+        const t = d.elements.find((e) => e.id === m.id);
+        if (t) move(t, m.dx, m.dy);
+      }
+      render();
+      renderInspector();
+    });
+  }
   $("#btnDel")?.addEventListener("click", () => {
     commit();
-    d.elements = d.elements.filter((e) => e.id !== el.id);
-    state.selected = null;
+    d.elements = d.elements.filter((e) => !state.selection.includes(e.id));
+    state.selection = [];
     render();
     renderInspector();
   });
   $("#btnDup")?.addEventListener("click", () => {
     commit();
-    const copy = JSON.parse(JSON.stringify(el));
-    copy.id = `${el.kind[0]}${d.nextId++}`;
-    move(copy, 3, 3);
-    d.elements.push(copy);
-    state.selected = copy.id;
+    const copies = duplicate(d, els, [3, 3]);
+    d.elements.push(...copies);
+    state.selection = copies.map((c) => c.id);
     render();
     renderInspector();
   });
@@ -452,7 +546,7 @@ function onInspectorInput(ev) {
   const t = ev.target;
   const d = state.doc;
   commit();
-  const el = d.elements.find((e) => e.id === state.selected);
+  const el = d.elements.find((e) => e.id === state.selection[0]);
 
   if (t.dataset.canvas !== undefined) {
     const key = t.dataset.canvas;
@@ -499,6 +593,7 @@ function onInspectorInput(ev) {
 // ---------- 顶栏 ----------
 function setMode(mode) {
   state.mode = mode;
+  state.bypassed = false;
   document.body.classList.toggle("preview", mode === "preview");
   for (const b of document.querySelectorAll("#mode button")) b.classList.toggle("on", b.dataset.mode === mode);
   $("#stHint").textContent =
@@ -518,7 +613,7 @@ $("#btnRedo").addEventListener("click", redo);
 $("#btnNew").addEventListener("click", () => {
   commit();
   state.doc = newDoc({ name: "未命名面板", params: state.doc.params });
-  state.selected = null;
+  state.selection = [];
   state.values = {};
   render();
   renderInspector();
@@ -537,7 +632,7 @@ $("#fileInput").addEventListener("change", async (e) => {
     } else {
       commit();
       state.doc = load(text);
-      state.selected = null;
+      state.selection = [];
     }
     render();
     renderInspector();

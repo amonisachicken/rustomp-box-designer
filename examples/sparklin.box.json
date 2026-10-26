@@ -187,12 +187,12 @@
       "image_down": "toggle_small_down",
       "x": 25.93,
       "y_up": 38.26,
-      "y_down": 38.26,
+      "y_down": 38.8,
       "width": 8.35,
       "height": 8.89,
       "pivot": [
         30.11,
-        42.71
+        42.98
       ],
       "press_scale": 0.9,
       "state": false

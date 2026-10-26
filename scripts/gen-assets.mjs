@@ -29,6 +29,27 @@ function walk(dir) {
   return out;
 }
 
+/**
+ * 六边形中心（拨杆两态的"轴心"）。
+ *
+ * 两态素材是**镜像**画的：上半的六边形偏下、下半的六边形偏上，
+ * 各自贴回同一个 y 就会让六边形中心差 1.53 mm（legacy 版的老毛病）。
+ * 所以从 polyline/polygon 的点里算出它的包围盒中心，导出时两态各让开这个差值。
+ */
+function hexCenter(svg) {
+  const polys = [...svg.matchAll(/<(?:polyline|polygon)\b[^>]*\bpoints="([\d.\s,-]+)"/g)];
+  for (const [, pts] of polys) {
+    const nums = pts.trim().split(/[\s,]+/).map(Number);
+    if (nums.length < 6) continue;
+    const xs = [], ys = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) { xs.push(nums[i]); ys.push(nums[i + 1]); }
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    return { x_pt: cx, y_pt: cy };
+  }
+  return null;
+}
+
 /** 从 SVG 文本里抠出我们需要的几个数：viewBox 尺寸、圆形半径 */
 function inspect(svg) {
   const vb = /viewBox="([-\d.\s]+)"/.exec(svg);
@@ -44,6 +65,11 @@ function inspect(svg) {
     r_outer_mm: radii.length ? +(Math.max(...radii) * PT_TO_MM).toFixed(4) : null,
     r_inner_mm: radii.length > 1 ? +(Math.min(...radii) * PT_TO_MM).toFixed(4) : null,
     cx_pt: cx ? Number(cx[1]) : null,
+    hex_center_mm: (() => {
+      const hex = hexCenter(svg);
+      if (!hex) return null;
+      return [+(hex.x_pt * PT_TO_MM).toFixed(4), +(hex.y_pt * PT_TO_MM).toFixed(4)];
+    })(),
     hasCenterCircle: radii.length > 0,
   };
 }
@@ -65,6 +91,7 @@ for (const file of walk(join(ROOT, "assets"))) {
     r_outer_mm: info.r_outer_mm,
     r_inner_mm: info.r_inner_mm,
     cx_pt: info.cx_pt,
+    hex_center_mm: info.hex_center_mm,
   });
 }
 

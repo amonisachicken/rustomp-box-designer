@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { byId } from "../src/assets.gen.js";
 import {
   newDoc,
   factory,
@@ -31,12 +32,17 @@ test("旋钮：半径来自素材尺寸，指针朝上 = 0.5（travel_deg 对称
   assert.deepEqual(k.image_size, [15.0036, 15.0036]);
 });
 
-test("拨杆：两态 y 相同（= 运行时归一化后的契约），pivot 在中心", () => {
+test("拨杆：两态 y 差正好抵消素材的六边形偏移（切换时六边形不跳）", () => {
   const d = doc();
   const t = factory.toggle(d, { x: 20, y: 30 });
-  assert.equal(t.y_up, t.y_down);
-  assert.equal(t.pivot[0], +(20 + t.width / 2).toFixed(2));
-  assert.ok(t.height > 8);
+  const up = byId(t.image_up);
+  const down = byId(t.image_down);
+  assert.ok(t.y_up !== t.y_down, "素材是镜像画的，两态 y 一定不同");
+  const cyUp = t.y_up + up.hex_center_mm[1];
+  const cyDown = t.y_down + down.hex_center_mm[1];
+  assert.ok(Math.abs(cyUp - cyDown) < 0.01, `六边形中心差 ${(cyUp - cyDown).toFixed(3)} mm`);
+  // pivot = 六边形中心（按下缩放以它为原点）
+  assert.ok(Math.abs(t.pivot[1] - cyUp) < 0.01);
 });
 
 test("LED 半径 = 素材内圈（镜片），底座外圈留在底图里", () => {
@@ -65,12 +71,12 @@ test("校验：LED 允许 clip_indicator 这个虚拟 id", () => {
   assert.deepEqual(validate(d), []);
 });
 
-test("校验：拨杆两态 y 不一致会被拦下（切换会跳）", () => {
+test("校验：手工把两态六边形中心弄歪会被拦下", () => {
   const d = doc();
   const t = factory.toggle(d, { param: "gain" });
   d.elements.push(t);
-  t.y_down = t.y_up + 1.5;
-  assert.match(validate(d).join(), /两态 y 不一致/);
+  t.y_down = t.y_up; // 破坏掉那个 0.54 mm 的补偿
+  assert.match(validate(d).join(), /六边形中心没对齐/);
 });
 
 test("校验：超出画布要报错", () => {

@@ -75,25 +75,34 @@ export const factory = {
     };
   },
 
-  /** 拨杆（两态各一张贴图；两态锚点归一化后 y_up == y_down） */
+  /**
+   * 拨杆（两态各一张贴图）。
+   *
+   * **两态的六边形中心必须重合**：素材是镜像画的（上半的六边形偏下、下半的偏上），
+   * 各贴同一个 y 会让六边形差 0.54 mm（小）/ 0.95 mm（大）——就是 legacy 版
+   * "切换时跳 1.53 pt" 的老毛病。所以这里按素材里的六边形中心算出 `y_down` 的偏移。
+   */
   toggle(doc, { pair = "toggle_small", param = "", x = 25, y = 40 } = {}) {
     const up = byId(`${pair}_up`);
     const down = byId(`${pair}_down`);
     const w = up.size_mm[0];
     const h = up.size_mm[1];
+    const hx = up.hex_center_mm?.[0] ?? w / 2;
+    const hy = up.hex_center_mm?.[1] ?? h / 2;
+    const dy = +((up.hex_center_mm?.[1] ?? 0) - (down.hex_center_mm?.[1] ?? 0)).toFixed(4);
     return {
       id: uid(doc, "t"),
       kind: "toggle",
       param,
       image_up: `${pair}_up`,
       image_down: `${pair}_down`,
-      // x = 贴图左边；y_up / y_down = 贴图顶边（素材本身两态对齐，故相同）
+      // x = 贴图左边；y_up / y_down = 各自贴图的顶边（差 dy，使六边形中心重合）
       x,
       y_up: y,
-      y_down: y,
+      y_down: +(y + dy).toFixed(2),
       width: w,
       height: h,
-      pivot: [+(x + w / 2).toFixed(2), +(y + h / 2).toFixed(2)],
+      pivot: [+(x + hx).toFixed(2), +(y + hy).toFixed(2)], // 轴心 = 六边形中心
       press_scale: 0.9,
       state: false,
     };
@@ -230,8 +239,22 @@ export function validate(doc) {
       problems.push(`${el.id}：按住态素材 "${el.image_hold}" 不存在`);
     }
     if (el.kind === "toggle") {
-      if (!byId(el.image_up) || !byId(el.image_down)) problems.push(`${el.id}：拨杆两态素材缺失`);
-      if (el.y_up !== el.y_down) problems.push(`${el.id}：两态 y 不一致（会在切换时跳）`);
+      const up = byId(el.image_up);
+      const down = byId(el.image_down);
+      if (!up || !down) problems.push(`${el.id}：拨杆两态素材缺失`);
+      else {
+        // 判据是"六边形中心重合"，不是"两个 y 相等"（素材本身两态不是对齐画的）
+        const cyUp = el.y_up + (up.hex_center_mm?.[1] ?? up.size_mm[1] / 2);
+        const cyDown = el.y_down + (down.hex_center_mm?.[1] ?? down.size_mm[1] / 2);
+        if (Math.abs(cyUp - cyDown) > 0.02) {
+          problems.push(`${el.id}：两态六边形中心没对齐（差 ${(cyUp - cyDown).toFixed(2)} mm）`);
+        }
+        const cxUp = up.hex_center_mm?.[0] ?? 0;
+        const cxDown = down.hex_center_mm?.[0] ?? 0;
+        if (Math.abs(cxUp - cxDown) > 0.02) {
+          problems.push(`${el.id}：两态素材横向不一致（差 ${(cxUp - cxDown).toFixed(2)} mm），换一组素材`);
+        }
+      }
     }
     if (el.kind === "knob" && el.travel_deg <= 0) problems.push(`${el.id}：travel_deg 必须 > 0`);
 
@@ -307,4 +330,75 @@ export function snapTargets(doc, el, threshold = 1.2) {
     dy: bestY.dy,
     guides: [...best.guides, ...bestY.guides],
   };
+}
+
+/** 一组元素的联合外接框 */
+export function unionBox(els) {
+  if (!els.length) return null;
+  const bs = els.map(bbox);
+  const x = Math.min(...bs.map((b) => b.x));
+  const y = Math.min(...bs.map((b) => b.y));
+  const r = Math.max(...bs.map((b) => b.x + b.w));
+  const b = Math.max(...bs.map((b) => b.y + b.h));
+  return { x, y, w: r - x, h: b - y };
+}
+
+/**
+ * 对齐：6 种方式。`target` = "selection"（互相之间）或 "canvas"（对画布）。
+ * 返回需要施加的位移列表（不改元素，交给调用方去做 + 记一次撤销）。
+ */
+export function alignMoves(doc, els, mode, target = "selection") {
+  if (els.length < 2 && target === "selection") return [];
+  const [W, H] = doc.canvas.canvas_mm;
+  const box = target === "canvas" ? { x: 0, y: 0, w: W, h: H } : unionBox(els);
+  return els.map((el) => {
+    const b = bbox(el);
+    switch (mode) {
+      case "left":
+        return { id: el.id, dx: box.x - b.x, dy: 0 };
+      case "right":
+        return { id: el.id, dx: box.x + box.w - (b.x + b.w), dy: 0 };
+      case "hcenter":
+        return { id: el.id, dx: box.x + box.w / 2 - (b.x + b.w / 2), dy: 0 };
+      case "top":
+        return { id: el.id, dx: 0, dy: box.y - b.y };
+      case "bottom":
+        return { id: el.id, dx: 0, dy: box.y + box.h - (b.y + b.h) };
+      case "vcenter":
+        return { id: el.id, dx: 0, dy: box.y + box.h / 2 - (b.y + b.h / 2) };
+      default:
+        return { id: el.id, dx: 0, dy: 0 };
+    }
+  });
+}
+
+/** 等间距（axis = "x" | "y"）：把中间的元素按两端平均摊开 */
+export function distributeMoves(els, axis = "x") {
+  if (els.length < 3) return [];
+  const withBox = els.map((el) => ({ el, b: bbox(el) }));
+  const key = axis === "x" ? "x" : "y";
+  const size = axis === "x" ? "w" : "h";
+  withBox.sort((a, b) => a.b[key] - b.b[key]);
+  const first = withBox[0].b[key];
+  const last = withBox.at(-1).b[key] + withBox.at(-1).b[size];
+  const total = withBox.reduce((s, x) => s + x.b[size], 0);
+  const gap = (last - first - total) / (withBox.length - 1);
+  let cursor = first;
+  const moves = [];
+  for (const { el, b } of withBox) {
+    const delta = cursor - b[key];
+    moves.push({ id: el.id, dx: axis === "x" ? delta : 0, dy: axis === "y" ? delta : 0 });
+    cursor += b[size] + gap;
+  }
+  return moves;
+}
+
+/** 复制一组元素（返回新元素，id 重新分配，整体偏移 d） */
+export function duplicate(doc, els, d = [2, 2]) {
+  return els.map((el) => {
+    const copy = JSON.parse(JSON.stringify(el));
+    copy.id = `${el.kind[0]}${doc.nextId++}`;
+    move(copy, d[0], d[1]);
+    return copy;
+  });
 }

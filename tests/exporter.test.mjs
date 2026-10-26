@@ -132,3 +132,19 @@ svg_width = 60
     ],
   );
 });
+
+test("旁通时 LED 去色变灰（与运行时的 led_grey 同一公式）", () => {
+  const d = demo();
+  const on = panelSvg(d, assets(), { controls: true, values: {}, bypassed: false });
+  const off = panelSvg(d, assets(), { controls: true, values: {}, bypassed: true });
+  const litColour = /data-control="led"[^>]*fill="([^"]+)"/.exec(on)[1];
+  const greyColour = /data-control="led"[^>]*fill="([^"]+)"/.exec(off)[1];
+  assert.match(greyColour, /^rgb\((\d+),\1,\1\)$/, `应当是灰度色，实际 ${greyColour}`);
+  assert.notEqual(greyColour, litColour);
+  // 灰要比暗红更亮一档（暗红 #800000 太暗，看不出是"灰"）
+  const lum = (c) => {
+    const n = /rgb\((\d+),(\d+),(\d+)\)/.exec(c).slice(1).map(Number);
+    return 0.299 * n[0] + 0.587 * n[1] + 0.114 * n[2];
+  };
+  assert.ok(lum(greyColour) > lum("rgb(38,38,38)"), "灰灯不该是接近黑");
+});

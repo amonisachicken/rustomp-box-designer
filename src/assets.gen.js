@@ -11,7 +11,11 @@ export const ASSETS = [
     ],
     "r_outer_mm": 13.5008,
     "r_inner_mm": null,
-    "cx_pt": 38.27
+    "cx_pt": 38.27,
+    "hex_center_mm": [
+      13.5008,
+      12.8905
+    ]
   },
   {
     "id": "knob_round_dark",
@@ -23,7 +27,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": 7.3731,
     "r_inner_mm": null,
-    "cx_pt": 21.26
+    "cx_pt": 21.26,
+    "hex_center_mm": null
   },
   {
     "id": "knob_round_light",
@@ -35,7 +40,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": 10.0012,
     "r_inner_mm": null,
-    "cx_pt": 28.85
+    "cx_pt": 28.85,
+    "hex_center_mm": null
   },
   {
     "id": "label_attack",
@@ -47,7 +53,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_bias",
@@ -59,7 +66,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_boost",
@@ -71,7 +79,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_clip",
@@ -83,7 +92,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_comp",
@@ -95,7 +105,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_depth",
@@ -107,7 +118,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_dist",
@@ -119,7 +131,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_drive",
@@ -131,7 +144,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_fuzz",
@@ -143,7 +157,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_gain",
@@ -155,7 +170,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_input",
@@ -167,7 +183,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_level",
@@ -179,7 +196,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_mix",
@@ -191,7 +209,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_output",
@@ -203,7 +222,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_range",
@@ -215,7 +235,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_rate",
@@ -227,7 +248,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_release",
@@ -239,7 +261,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_sustain",
@@ -251,7 +274,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_tone",
@@ -263,7 +287,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "label_volume",
@@ -275,7 +300,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": null
   },
   {
     "id": "led_blue",
@@ -287,7 +313,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": 2.9986,
     "r_inner_mm": 2.2472,
-    "cx_pt": 8.88
+    "cx_pt": 8.88,
+    "hex_center_mm": null
   },
   {
     "id": "led_green",
@@ -299,7 +326,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": 2.9986,
     "r_inner_mm": 2.2472,
-    "cx_pt": 8.88
+    "cx_pt": 8.88,
+    "hex_center_mm": null
   },
   {
     "id": "led_red",
@@ -311,7 +339,8 @@ export const ASSETS = [
     ],
     "r_outer_mm": 2.9986,
     "r_inner_mm": 2.2472,
-    "cx_pt": 8.88
+    "cx_pt": 8.88,
+    "hex_center_mm": null
   },
   {
     "id": "3pdt_alt",
@@ -324,6 +353,10 @@ export const ASSETS = [
     "r_outer_mm": 6.9991,
     "r_inner_mm": 4.0005,
     "cx_pt": 20.34,
+    "hex_center_mm": [
+      7.1755,
+      7.1632
+    ],
     "hold": "3pdt_alt_hold"
   },
   {
@@ -336,7 +369,11 @@ export const ASSETS = [
     ],
     "r_outer_mm": 6.9991,
     "r_inner_mm": 3.4996,
-    "cx_pt": 20.34
+    "cx_pt": 20.34,
+    "hex_center_mm": [
+      7.1755,
+      7.1632
+    ]
   },
   {
     "id": "toggle_large_down",
@@ -348,7 +385,11 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": [
+      7.1755,
+      7.1755
+    ]
   },
   {
     "id": "toggle_large_up",
@@ -360,7 +401,11 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": [
+      7.1755,
+      8.1209
+    ]
   },
   {
     "id": "toggle_small_down",
@@ -372,7 +417,11 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": [
+      4.1769,
+      4.1751
+    ]
   },
   {
     "id": "toggle_small_up",
@@ -384,7 +433,11 @@ export const ASSETS = [
     ],
     "r_outer_mm": null,
     "r_inner_mm": null,
-    "cx_pt": null
+    "cx_pt": null,
+    "hex_center_mm": [
+      4.1769,
+      4.7166
+    ]
   }
 ];
 export const SWITCH_PAIRS = {
