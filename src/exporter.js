@@ -4,7 +4,7 @@
 // 预览与导出必然一致（docs/00-decisions.md D-001）。
 import { byId } from "./assets.gen.js";
 import { placeAsset } from "./embed.js";
-import { layerOf, bbox } from "./model.js";
+import { layerOf, bbox, ledRadius, buttonRadius } from "./model.js";
 
 const M = 25.4 / 72; // pt → mm
 
@@ -126,7 +126,7 @@ function ledCircle(el, lit, bypassed = false) {
   const color = bypassed ? greyColor(el.off_color) : lit ? el.on_color : el.off_color;
   return (
     `<circle data-elid="${esc(el.id)}" data-control="led" cx="${num(el.center[0])}" cy="${num(el.center[1])}" ` +
-    `r="${num(el.radius)}" fill="${esc(color)}"/>`
+    `r="${num(ledRadius(el))}" fill="${esc(color)}"/>`
   );
 }
 
@@ -165,7 +165,7 @@ function toggleSprite(el, assets, values) {
  */
 function buttonPress(el, assets, bg) {
   const [cx, cy] = el.center;
-  const r = el.radius;
+  const r = buttonRadius(el);
   const erase = `<rect x="${num(cx - r)}" y="${num(cy - r)}" width="${num(r * 2)}" height="${num(r * 2)}" fill="${esc(bg)}"/>`;
 
   // 有按住态贴图 → 整张换上（与运行时一致，不缩放）
@@ -182,7 +182,7 @@ function buttonPress(el, assets, bg) {
   const [x, y] = [cx - a.size_mm[0] / 2, cy - a.size_mm[1] / 2];
   return (
     erase +
-    `<g transform="translate(${num(cx)} ${num(cy)}) scale(${num(el.press_scale)}) translate(${num(-cx)} ${num(-cy)})">` +
+    `<g transform="translate(${num(cx)} ${num(cy)}) scale(${num(el.press_scale ?? 0.9)}) translate(${num(-cx)} ${num(-cy)})">` +
     placeAsset({ assetId: el.asset, text: assets[el.asset], x, y }) +
     `</g>`
   );
@@ -258,7 +258,7 @@ export function uiToml(doc) {
     L.push("[[ui.leds]]");
     L.push(`param = "${esc(el.param)}"`);
     L.push(`center = ${vec(el.center)}`);
-    L.push(`radius = ${num(el.radius)}`);
+    L.push(`radius = ${num(ledRadius(el))}`); // = 素材镜片半径，不给用户调
     L.push(`off_color = "${esc(el.off_color)}"`);
     L.push(`on_color = "${esc(el.on_color)}"`);
   }
@@ -281,8 +281,8 @@ export function uiToml(doc) {
     L.push("[[ui.buttons]]");
     L.push(`param = "${esc(el.param)}"`);
     L.push(`center = ${vec(el.center)}`);
-    L.push(`radius = ${num(el.radius)}`);
-    L.push(`press_scale = ${num(el.press_scale)}`);
+    L.push(`radius = ${num(buttonRadius(el))}`); // = 美术宽/2（必须盖住美术）
+    L.push(`press_scale = 0.9`); // 只在"没有按住态贴图"时兜底用；有贴图时整张换
     if (el.image_hold) {
       L.push(`image_hold = "${esc(el.image_hold)}"`);
       L.push(`image_size = ${vec(el.image_size)}`);

@@ -22,9 +22,18 @@ import {
   duplicate,
   importSvg,
   mergedAssets,
+  ledRadius,
+  buttonRadius,
+  paramChoices,
 } from "../src/model.js";
 
-const doc = () => newDoc({ params: [{ id: "gain" }, { id: "bypass" }] });
+const doc = () =>
+  newDoc({
+    params: [
+      { id: "gain", type: "float" },
+      { id: "bypass", type: "bool" },
+    ],
+  });
 
 test("新建文档的窗口 = 面板 mm × 6 px/mm", () => {
   const d = newDoc({ preset: "1590B" });
@@ -54,17 +63,21 @@ test("拨杆：两态 y 差正好抵消素材的六边形偏移（切换时六�
   assert.ok(Math.abs(t.pivot[1] - cyUp) < 0.01);
 });
 
-test("LED 半径 = 素材内圈（镜片），底座外圈留在底图里", () => {
+test("LED 半径由素材镜片推出（不再有 radius 字段）", () => {
   const d = doc();
   const l = factory.led(d);
-  assert.ok(l.radius > 2 && l.radius < 3, `半径应≈2.25，实际 ${l.radius}`);
+  assert.equal(l.radius, undefined, "LED 不该再有 radius");
+  const r = ledRadius(l);
+  assert.ok(r > 2 && r < 3, `半径应≈2.25，实际 ${r}`);
   assert.equal(l.param, "clip_indicator"); // 虚拟指示，不需要在 params 里
 });
 
-test("脚踏：半径盖住美术（按下要擦掉这块），且带按住态", () => {
+test("脚踏：命中半径 = 美术宽/2（盖住美术），且带按住态", () => {
   const d = doc();
   const b = factory.button(d);
-  assert.ok(b.radius >= 7.0, `实际 ${b.radius}`);
+  assert.equal(b.radius, undefined, "脚踏不该再有 radius");
+  const art = byId(b.asset).size_mm[0];
+  assert.ok(buttonRadius(b) >= art / 2 - 0.01, `实际 ${buttonRadius(b)}，美术半径 ${art / 2}`);
   assert.equal(b.image_hold, "3pdt_alt_hold");
 });
 
@@ -82,7 +95,7 @@ test("校验：LED 允许 clip_indicator 这个虚拟 id", () => {
 
 test("校验：手工把两态六边形中心弄歪会被拦下", () => {
   const d = doc();
-  const t = factory.toggle(d, { param: "gain" });
+  const t = factory.toggle(d, { param: "bypass" });
   d.elements.push(t);
   t.y_down = t.y_up; // 破坏掉那个 0.54 mm 的补偿
   assert.match(validate(d).join(), /六边形中心没对齐/);
@@ -103,7 +116,7 @@ test("move 对四类控件都生效（拨杆要带上 pivot）", () => {
   assert.equal(t.pivot[0], +(before + 5).toFixed(2));
 });
 
-test("resize 保持圆心不变（旋钮改贴图尺寸，LED/脚踏改半径）", () => {
+test("resize 只影响旋钮的显示尺寸；LED/脚踏尺寸随素材，不受影响", () => {
   const d = doc();
   const k = factory.knob(d, { param: "gain", center: [20, 20] });
   const w0 = k.image_size[0];
@@ -111,9 +124,9 @@ test("resize 保持圆心不变（旋钮改贴图尺寸，LED/脚踏改半径）
   assert.deepEqual(k.center, [20, 20]);
   assert.equal(k.image_size[0], +(w0 * 0.5).toFixed(2));
   const led = factory.led(d, { center: [30, 30] });
-  const r0 = led.radius;
+  const r0 = ledRadius(led);
   resize(led, 0.5);
-  assert.equal(led.radius, +(r0 * 0.5).toFixed(2));
+  assert.equal(ledRadius(led), r0, "LED 半径只由素材决定");
 });
 
 test("snap 吸附 0.5 mm", () => {
@@ -177,7 +190,7 @@ test("吸附：也会对齐到其它控件的中线", () => {
 
 test("syncTogglePivot：改 y_up 后 y_down 与 pivot 自动跟随（六边形仍重合）", () => {
   const d = doc();
-  const t = factory.toggle(d, { param: "gain", x: 20, y: 30 });
+  const t = factory.toggle(d, { param: "bypass", x: 20, y: 30 }); // 拨杆只能绑 bool
   d.elements.push(t);
   const dy = toggleDy(t);
   assert.ok(dy > 0.4, `两态 y 差应≈0.54，实际 ${dy}`);
@@ -236,4 +249,27 @@ test("导入素材能进元素并参与校验/合并", () => {
   k.asset = imp.id;
   d.elements.push(k);
   assert.match(validate(d).join(), /控件不能用导入素材/);
+});
+
+test("参数类型必须匹配控件（D-014）：旋钮只 float、拨杆/脚踏只 bool、LED 只指示量", () => {
+  const d = newDoc({
+    params: [
+      { id: "gain", type: "float" },
+      { id: "bypass", type: "bool" },
+      { id: "mode", type: "bool" },
+    ],
+  });
+  assert.deepEqual(paramChoices(d, "knob"), ["gain"]);
+  assert.deepEqual(paramChoices(d, "toggle"), ["bypass", "mode"]);
+  assert.deepEqual(paramChoices(d, "button"), ["bypass", "mode"]);
+  assert.deepEqual(paramChoices(d, "led"), ["clip_indicator"]);
+
+  // 错配要在校验里报出来（不会崩，但会"拖了没反应"）
+  const k = factory.knob(d, { param: "bypass" });
+  d.elements.push(k);
+  assert.match(validate(d).join(), /knob 只能绑 float 类型参数/);
+
+  const l = factory.led(d, { param: "gain" });
+  d.elements.push(l);
+  assert.match(validate(d).join(), /led 只能绑 指示灯指示量/);
 });

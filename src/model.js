@@ -135,14 +135,16 @@ export const factory = {
       asset,
       param,
       center,
-      radius: a.r_inner_mm ?? +(a.size_mm[0] / 2).toFixed(3),
       off_color: color?.[0] ?? "#800000",
       on_color: color?.[1] ?? "#ff0000",
       lit: false,
     };
   },
 
-  /** 脚踏（常态美术压进底图；按住态用它自己的贴图） */
+  /**
+   * 脚踏（常态美术压进底图；按住态用它自己的贴图）。
+   * 命中半径 = 美术宽/2；按住态是**整张换贴图**，所以"按下缩放"也没意义 —— 都不给用户调。
+   */
   button(doc, { asset = "3pdt_alt", param = "bypass", center = [30, 85] } = {}) {
     const a = byId(asset);
     return {
@@ -153,9 +155,6 @@ export const factory = {
       image_size: a.size_mm,
       param,
       center,
-      // 命中半径必须 ≥ 美术半径（按下时要擦掉这块）
-      radius: +(a.size_mm[0] / 2).toFixed(2),
-      press_scale: 0.9,
       pressed: false,
     };
   },
@@ -248,6 +247,35 @@ export function mergedAssets(doc, builtin) {
   return out;
 }
 
+/** 指示灯用的虚拟参数 id（不是真参数，读的是引擎的活动量） */
+export const INDICATORS = ["clip_indicator"];
+
+/**
+ * 每类控件**允许绑定**的参数类型（D-014）。
+ *
+ * 界面上"旋钮绑了 bool"或"LED 绑了 gain"这种错配，不会让插件崩溃，
+ * 只会表现成"拖了没反应"或"灯永远亮"——所以必须在选择器里就过滤掉、在校验里报错。
+ */
+export const ALLOWED_PARAM_KIND = {
+  knob: "float",
+  toggle: "bool",
+  button: "bool",
+  led: "indicator",
+};
+
+/** 某控件能绑哪些参数 id */
+export function paramChoices(doc, kind) {
+  const want = ALLOWED_PARAM_KIND[kind];
+  if (want === "indicator") return [...INDICATORS];
+  return (doc.params ?? []).filter((p) => (p.type ?? "float") === want).map((p) => p.id);
+}
+
+/** 某个 id 是否允许绑到该类控件 */
+export function paramAllowed(doc, kind, id) {
+  if (!id) return false;
+  return paramChoices(doc, kind).includes(id);
+}
+
 /** 素材种类 → 图层（素材库里要按焦点虚化） */
 export const KIND_LAYER = {
   knob: "knobs",
@@ -266,6 +294,19 @@ export function layerOf(el) {
   return el.layer ?? "silkscreen";
 }
 
+/** LED 命中/绘制半径：素材内圈（镜片），没有内圈就用外圈/2 */
+export function ledRadius(el) {
+  const a = byId(el.asset);
+  return a ? (a.r_inner_mm ?? a.size_mm[0] / 2) : 2.25;
+}
+
+/** 脚踏命中半径：美术宽/2（必须盖住美术，按下要擦掉这块） */
+export function buttonRadius(el) {
+  const a = byId(el.asset);
+  const w = el.image_size?.[0] ?? a?.size_mm[0] ?? 14.35;
+  return +(w / 2).toFixed(3);
+}
+
 /**
  * 元素的外接框（mm）。
  * `frame`（面板边框）是**贴画布**的，尺寸随画布变，所以要把 canvas 传进来。
@@ -277,9 +318,12 @@ export function bbox(el, [W, H] = [60, 112]) {
       const [w, h] = el.image_size ?? [el.radius * 2, el.radius * 2];
       return { x: el.center[0] - w / 2, y: el.center[1] - h / 2, w, h };
     }
-    case "led":
+    case "led": {
+      const r = ledRadius(el);
+      return { x: el.center[0] - r, y: el.center[1] - r, w: r * 2, h: r * 2 };
+    }
     case "button": {
-      const r = el.radius;
+      const r = buttonRadius(el);
       return { x: el.center[0] - r, y: el.center[1] - r, w: r * 2, h: r * 2 };
     }
     case "toggle":
@@ -320,11 +364,9 @@ export function move(el, dx, dy) {
 
 /** 以 bbox 中心为基准缩放（旋钮直径 / LED 半径 / 脚踏半径） */
 export function resize(el, factor) {
+  // 只有旋钮还能改尺寸（其余都随素材），且只影响显示尺寸，不改材质
   if (el.kind === "knob") {
     el.image_size = [round2(el.image_size[0] * factor), round2(el.image_size[1] * factor)];
-    el.radius = round2(el.image_size[0] / 2);
-  } else if (el.kind === "led" || el.kind === "button") {
-    el.radius = round2(el.radius * factor);
   }
 }
 
@@ -344,10 +386,20 @@ export function validate(doc) {
     if (seen.has(el.id)) problems.push(`元素 id 重复：${el.id}`);
     seen.add(el.id);
 
-    if (el.kind === "knob" || el.kind === "toggle" || el.kind === "button" || el.kind === "led") {
-      if (!el.param) problems.push(`${el.id}：没有绑定参数`);
-      else if (!params.has(el.param) && !(el.kind === "led" && virtual.has(el.param))) {
-        problems.push(`${el.id}：参数 "${el.param}" 不在 rustomp.toml 里`);
+    if (["knob", "toggle", "button", "led"].includes(el.kind)) {
+      const want = ALLOWED_PARAM_KIND[el.kind];
+      if (!el.param) {
+        problems.push(`${el.id}：没有绑定参数`);
+      } else if (!paramAllowed(doc, el.kind, el.param)) {
+        // 分两种：参数根本不存在 / 存在但类型不对
+        const exists = params.has(el.param);
+        if (!exists && el.kind !== "led") {
+          problems.push(`${el.id}：参数 "${el.param}" 不在 rustomp.toml 里`);
+        } else {
+          // 类型错配：不会崩，但会"拖了没反应"/"灯永远亮"，必须挡住
+          const what = want === "indicator" ? "指示灯指示量（clip_indicator）" : `${want} 类型参数`;
+          problems.push(`${el.id}：${el.kind} 只能绑 ${what}，"${el.param}" 不是`);
+        }
       }
     }
     if (el.asset && !assetInfo(doc, el.asset)) problems.push(`${el.id}：素材 "${el.asset}" 不存在`);

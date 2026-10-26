@@ -26,6 +26,10 @@ import {
   importSvg,
   assetInfo,
   mergedAssets,
+  paramChoices,
+  INDICATORS,
+  ledRadius,
+  buttonRadius,
 } from "./model.js";
 import { panelSvg, uiToml, parseParams, num } from "./exporter.js";
 
@@ -295,20 +299,46 @@ const canvasCenter = () => [
 ];
 
 function addElement(kind, id) {
+  try {
+    addElementInner(kind, id);
+  } catch (err) {
+    $("#stHint").textContent = `⚠ 添加失败：${err.message}`;
+  }
+}
+
+function addElementInner(kind, id) {
   const d = state.doc;
   const [cx, cy] = canvasCenter();
-  const firstParam = d.params[0]?.id ?? "";
+  // 默认参数必须类型匹配（旋钮→float、拨杆/脚踏→bool、LED→指示量）
+  const firstParam = (k) => {
+    const list = paramChoices(d, k);
+    return list[0] ?? (k === "led" ? INDICATORS[0] : "");
+  };
   let el;
   // 一律以画布中心为基准（贴图类按中心反推左上角）
-  if (kind === "knob") el = factory.knob(d, { asset: id, param: firstParam, center: [cx, cy] });
+  if (kind === "knob") el = factory.knob(d, { asset: id, param: firstParam("knob"), center: [cx, cy] });
   else if (kind === "toggle") {
     const up = byId(SWITCH_PAIRS[id].up);
-    el = factory.toggle(d, { pair: id, param: firstParam, x: cx - Math.floor(up.size_mm[0] / 2), y: cy - Math.floor(up.size_mm[1] / 2) });
+    el = factory.toggle(d, {
+      pair: id,
+      param: firstParam("toggle"),
+      x: cx - Math.floor(up.size_mm[0] / 2),
+      y: cy - Math.floor(up.size_mm[1] / 2),
+    });
   } else if (kind === "led") el = factory.led(d, { asset: id, center: [cx, cy] });
-  else if (kind === "button") el = factory.button(d, { asset: id, param: firstParam, center: [cx, cy] });
+  else if (kind === "button") el = factory.button(d, { asset: id, param: firstParam("button"), center: [cx, cy] });
   else {
-    const a = byId(id);
-    el = factory.image(d, { asset: id, x: cx - Math.floor(a.size_mm[0] / 2), y: cy - Math.floor(a.size_mm[1] / 2) });
+    // 内置标签 or 外部导入：统一走 assetInfo（byId 只认识内置清单，导入的 id 是 imp_*）
+    const a = assetInfo(state.doc, id);
+    if (!a) throw new Error(`素材 ${id} 找不到（内置清单与 imported[] 里都没有）`);
+    const layer = kind === "imported" ? a.kind : "silkscreen";
+    el = factory.image(state.doc, {
+      asset: id,
+      x: cx - Math.floor(a.size_mm[0] / 2),
+      y: cy - Math.floor(a.size_mm[1] / 2),
+      layer,
+      size: a.size_mm,
+    });
   }
   commit();
   d.elements.push(el);
@@ -446,12 +476,19 @@ function renderInspector() {
   const els = selectedElements();
   const el = els.length === 1 ? els[0] : null;
   const d = state.doc;
-  const params = d.params.map((p) => p.id);
-  if (el && el.kind === "led") params.unshift("clip_indicator");
-  const paramOptions = (cur) =>
-    ["", ...new Set([...params, cur].filter((v) => v !== undefined))]
-      .map((p) => `<option value="${p}" ${p === cur ? "selected" : ""}>${p || "（未绑定）"}</option>`)
-      .join("");
+  // 只列出**类型匹配**的参数；类型不匹配的当前值也显示出来（带 ⚠），方便发现历史错配
+  const paramOptions = (kind, cur) => {
+    const allowed = paramChoices(d, kind);
+    const list = [...new Set([...allowed, ...(cur ? [cur] : [])])];
+    const bad = cur && !allowed.includes(cur);
+    return [
+      `<option value="" ${!cur ? "selected" : ""}>（未绑定）</option>`,
+      ...list.map(
+        (p) =>
+          `<option value="${p}" ${p === cur ? "selected" : ""}>${p}${cur && p === cur && bad ? " ⚠ 类型不匹配" : ""}</option>`,
+      ),
+    ].join("");
+  };
   const numInput = (label, key, obj = el, opts = {}) =>
     `<div class="row"><label>${label}</label><input type="number" step="${opts.step ?? 1}" data-key="${key}" ${
       opts.obj ? `data-obj="${opts.obj}"` : ""
@@ -478,9 +515,7 @@ function renderInspector() {
       <button data-distribute="x">横向</button><button data-distribute="y">纵向</button></span></div>`;
     // 批量改：同类元素共有字段
     const kinds = [...new Set(els.map((e) => e.kind))];
-    if (kinds.length === 1 && ["led", "button"].includes(kinds[0])) {
-      body += numInput("半径 mm（全部）", "radius", els[0]);
-    }
+
     if (kinds.length === 1 && kinds[0] === "image") {
       body += numInput("旋转 °（全部）", "rot", els[0], { step: 1 });
     }
@@ -489,7 +524,7 @@ function renderInspector() {
   } else if (el) {
     body += `<h3>${el.kind} · ${el.id}</h3>`;
     if (["knob", "toggle", "led", "button"].includes(el.kind)) {
-      body += `<div class="row"><label>参数</label><select data-key="param">${paramOptions(el.param)}</select></div>`;
+      body += `<div class="row"><label>参数</label><select data-key="param">${paramOptions(el.kind, el.param)}</select></div>`;
     }
     if (el.kind === "knob") {
       body += numInput("中心 x", 0, el.center, { obj: "center" }).replace('data-key="0"', 'data-key="0" data-vec="center"');
@@ -510,8 +545,12 @@ function renderInspector() {
     } else if (el.kind === "led" || el.kind === "button") {
       body += numInput("中心 x", 0, el.center, { obj: "center" }).replace('data-key="0"', 'data-key="0" data-vec="center"');
       body += numInput("中心 y", 1, el.center, { obj: "center" }).replace('data-key="1"', 'data-key="1" data-vec="center"');
-      body += numInput("半径 mm", "radius");
-      if (el.kind === "button") body += numInput("按下缩放", "press_scale", el, { step: 0.05 });
+      // 半径/按下缩放都由素材决定（LED=镜片内圈、脚踏=美术宽/2 且按住态整张换图），不给调
+      const note =
+        el.kind === "led"
+          ? `半径 ${ledRadius(el).toFixed(2)} mm（随素材镜片）`
+          : `半径 ${buttonRadius(el).toFixed(2)} mm（随美术），按住态整张换图`;
+      body += `<div class="row"><label>尺寸</label><span style="flex:1;font-size:11.5px;color:#6b6156">${note}</span></div>`;
     } else if (el.kind === "frame") {
       body += `<p class="hint" style="font-size:11.5px;color:#6b6156">面板边框贴着画布，改画布尺寸会自动跟随；只需调内缩/圆角/线宽。</p>`;
       body += numInput("内缩 mm", "margin", el, { step: 0.1 });
@@ -845,8 +884,23 @@ if (query.has("selftest")) {
     return after === Math.floor(before + 12.7) ? true : `stuck:${before}->${after}`;
   })();
 
+  // 导入外部 SVG 的整条链路（用户报过 size_mm 崩溃）
+  const importOk = (() => {
+    try {
+      const svg = '<svg viewBox="0 0 28.35 14.17"><rect width="28.35" height="14.17"/></svg>';
+      const item = importSvg(state.doc, { name: "selftest", svg, kind: "silkscreen" });
+      state.focus = "silkscreen";
+      addElement("imported", item.id);
+      const el = state.doc.elements.at(-1);
+      return el && el.asset === item.id && el.layer === "silkscreen" ? true : "bad-element";
+    } catch (e) {
+      return e.message;
+    }
+  })();
+
   const ok =
     added === 3 &&
+    importOk === true &&
     moved &&
     inputOk === true &&
     toml.includes("[[ui.knobs]]") &&
@@ -854,5 +908,5 @@ if (query.has("selftest")) {
     toml.includes("[[ui.leds]]") &&
     svg.startsWith("<svg") &&
     svg.includes('data-control="knob"');
-  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} input=${inputOk} toml=${toml.length}B svg=${svg.length}B`;
+  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} input=${inputOk} import=${importOk} toml=${toml.length}B svg=${svg.length}B`;
 }
