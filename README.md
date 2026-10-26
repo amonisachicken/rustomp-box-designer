@@ -53,7 +53,7 @@
 浏览器里没有安装步骤（没有 npm 依赖）：`index.html` + 原生 ES modules。
 打开 `http://localhost:8765/?demo=1` 会直接载入示例面板。
 
-### 导出到插件项目
+### 导出到插件项目（详见 `docs/06-export-runbook.md`）
 
 ```bash
 # 1) 出 PNG + SVG（Inkscape 栅格化，12 px/mm）
@@ -111,6 +111,7 @@ examples/sparklin.box.json   用设计器复刻的真实面板
 | `docs/01-contract-panel-toml.md` | 契约：`[assets]` 与 `[ui]` 的每个字段、单位、默认值 |
 | `docs/02-runtime-panelspec.md` | 运行时语义：坐标缩放、旋钮角度映射、拨杆基线、LED、贴图生命周期 |
 | `docs/03-assets.md` | 素材规范与已知坑（@2x、alpha、六边形基线偏移 1.53） |
+| **`docs/06-export-runbook.md`** | **导出交接手册**：`ui.toml`+`panel.svg` → 插件（6 步命令、缺件清单、验收 5 条、常见问题） |
 | `docs/00-decisions.md` | **已拍板的决策**（D0 范围、技术栈、图层、坐标、导出、素材内联） |
 | `docs/04-open-questions.md` | 当初的 9 个开放问题（现已全部拍板，保留作理由存档） |
 
