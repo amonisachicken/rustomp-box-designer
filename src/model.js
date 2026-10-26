@@ -50,7 +50,7 @@ export function newDoc({ name = "未命名面板", preset = "1590B", params = []
       snap_to_targets: true, // 吸附到画布中线/其它控件的中线
       show_safe: true,
     },
-    layers: {}, // { [layerId]: { hidden: false, locked: false } }
+    layers: {}, // { [layerId]: { hidden: false } }
     nextId: 1,
   };
 }
@@ -153,6 +153,15 @@ export const factory = {
   rect(doc, { x = 0, y = 0, w = 20, h = 10, rx = 0, fill = "none", stroke = "#231815", strokeWidth = 0.35, layer = "artwork" } = {}) {
     return { id: uid(doc, "r"), kind: "rect", x, y, w, h, rx, fill, stroke, strokeWidth, layer };
   },
+};
+
+/** 素材种类 → 图层（素材库里要按焦点虚化） */
+export const KIND_LAYER = {
+  knob: "knobs",
+  toggle: "toggles",
+  led: "leds",
+  button: "buttons",
+  label: "silkscreen",
 };
 
 /** 每个元素在哪一层 */
@@ -284,10 +293,9 @@ export const save = (doc) => JSON.stringify(doc, null, 2) + "\n";
 /** 图层是否为隐藏/锁定（缺省 = 可见可编辑） */
 export const layerState = (doc, layer) => doc.layers?.[layer] ?? { hidden: false, locked: false };
 
-/** 元素当前是否可选中/可拖动 */
+/** 元素当前是否可选中/可拖动（只看显隐；"焦点"是编辑器的会话状态，见 main.js） */
 export function editable(doc, el) {
-  const st = layerState(doc, layerOf(el));
-  return !st.hidden && !st.locked;
+  return !layerState(doc, layerOf(el)).hidden;
 }
 
 /**

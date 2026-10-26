@@ -13,6 +13,7 @@ import {
   save,
   PRESETS,
   LAYERS,
+  KIND_LAYER,
   layerState,
   editable,
   snapTargets,
@@ -32,6 +33,7 @@ const state = {
   values: {}, // 预览态：元素 id → 数值/布尔
   guides: [], // 拖动时命中的吸附线（只画不导）
   bypassed: false, // 预览态的旁通开关（点脚踏切换，同真插件）
+  focus: null, // 焦点图层（null = 不聚焦，全部可编辑）
   past: [], // 撤销栈（文档快照）
   future: [], // 重做栈
 };
@@ -64,6 +66,7 @@ function render() {
     controls: true,
     values: state.mode === "preview" ? state.values : {},
     bypassed: state.mode === "preview" && state.bypassed,
+    dimLayers: state.mode === "preview" ? null : dimLayers(),
   });
   stage.innerHTML = svg + selectionOverlay() + overlay();
   $("#stage svg").setAttribute("preserveAspectRatio", "xMidYMid meet");
@@ -93,6 +96,15 @@ function selectionOverlay() {
 }
 
 const selectedElements = () => state.doc.elements.filter((e) => state.selection.includes(e.id));
+
+/** 是否可编辑：所在图层没隐藏，且（没有焦点 或 就是焦点图层） */
+function canEdit(el) {
+  return editable(state.doc, el) && (!state.focus || layerOf(el) === state.focus);
+}
+
+/** 不是焦点的图层 → 传给导出器做虚化 */
+const dimLayers = () =>
+  state.focus ? new Set(LAYERS.map((l) => l.id).filter((id) => id !== state.focus)) : null;
 
 /** 只保留"没被隐藏"的元素给渲染用（导出不走这里，导出是另一条路径） */
 function visibleDoc() {
@@ -168,13 +180,14 @@ function renderLibrary() {
   };
   const html = Object.entries(groups)
     .map(([kind, items]) => {
+      const dimmed = state.focus && KIND_LAYER[kind] !== state.focus;
       const cells = items
         .map((it) => {
           // 拨杆这一组是「pair 名」，缩略图取 up 态；其它组直接是素材 id
           const id = typeof it === "string" ? it : it.id;
           const file = kind === "toggle" ? byId(SWITCH_PAIRS[id].up).file : byId(id).file;
           const wide = kind === "label" ? " wide" : "";
-          return `<div class="asset${wide}" data-add="${kind}" data-id="${id}" title="${id}">
+          return `<div class="asset${wide}${dimmed ? " dimmed" : ""}" data-add="${kind}" data-id="${id}" title="${id}">
             <img src="${file}" alt="${id}"/><span>${id.replace(/^label_/, "")}</span></div>`;
         })
         .join("");
@@ -190,14 +203,31 @@ $("#assetList").addEventListener("click", (e) => {
   addElement(cell.dataset.add, cell.dataset.id);
 });
 
+/** 切焦点图层；点已聚焦的那个 = 取消聚焦（全部可编辑） */
+function setFocus(layer) {
+  state.focus = state.focus === layer ? null : layer;
+  // 焦点外的选中项要清掉
+  state.selection = state.selection.filter((id) => {
+    const el = state.doc.elements.find((e) => e.id === id);
+    return el && canEdit(el);
+  });
+  renderLibrary();
+  render();
+  renderLayers();
+  renderInspector();
+  $("#stHint").textContent = state.focus
+    ? `焦点：${LAYERS.find((l) => l.id === state.focus)?.name}（其它图层已虚化、不可选；再点一次退出）`
+    : "未聚焦：全部图层可编辑";
+}
+
 // ---------- 图层：显隐 / 锁定 ----------
 function renderLayers() {
   const rows = LAYERS.map((l) => {
     const st = layerState(state.doc, l.id);
     const n = state.doc.elements.filter((e) => layerOf(e) === l.id).length;
-    return `<div class="layer ${st.hidden ? "off" : ""}" data-layer="${l.id}">
+    const cls = [st.hidden ? "off" : "", state.focus === l.id ? "focus" : ""].filter(Boolean).join(" ");
+    return `<div class="layer ${cls}" data-layer="${l.id}" title="点名字聚焦（只编辑这一层）">
       <button data-act="hidden" class="${st.hidden ? "" : "on"}" title="显示/隐藏">${st.hidden ? "○" : "●"}</button>
-      <button data-act="locked" class="${st.locked ? "on" : ""}" title="锁定/解锁">${st.locked ? "🔒" : "🔓"}</button>
       <span class="name">${l.name}</span><span style="opacity:.5">${n || ""}</span>
     </div>`;
   }).join("");
@@ -205,18 +235,22 @@ function renderLayers() {
 }
 
 $("#layerList").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-act]");
   const row = e.target.closest("[data-layer]");
   if (!row) return;
   const id = row.dataset.layer;
-  const st = { ...layerState(state.doc, id) };
-  if (btn?.dataset.act === "hidden") st.hidden = !st.hidden;
-  else if (btn?.dataset.act === "locked") st.locked = !st.locked;
-  else return;
-  commit();
-  state.doc.layers = { ...(state.doc.layers ?? {}), [id]: st };
-  render();
-  renderLayers();
+  const btn = e.target.closest("button[data-act]");
+  if (btn?.dataset.act === "hidden") {
+    const st = { ...layerState(state.doc, id), hidden: !layerState(state.doc, id).hidden };
+    commit();
+    state.doc.layers = { ...(state.doc.layers ?? {}), [id]: st };
+    if (st.hidden) state.selection = [];
+    renderLibrary();
+    render();
+    renderLayers();
+    renderInspector();
+    return;
+  }
+  setFocus(id); // 点名字/行 = 聚焦该图层
 });
 
 /** 新元素放在画布中央（毫米），避免一加就超出边界 */
@@ -235,7 +269,11 @@ function addElement(kind, id) {
   commit();
   d.elements.push(el);
   state.selection = [el.id];
+  // 新元素如果不在当前焦点图层里，自动把焦点切过去（否则"加了但拖不动"）
+  if (state.focus && layerOf(el) !== state.focus) state.focus = layerOf(el);
+  renderLibrary();
   render();
+  renderLayers();
   renderInspector();
 }
 
@@ -289,7 +327,7 @@ $("#stage").addEventListener("pointerdown", (ev) => {
   }
 
   // 编辑模式：选中 + 开始拖动
-  if (id && el && editable(state.doc, el)) {
+  if (id && el && canEdit(el)) {
     // Shift/⌘ 点：加入或移除选区
     if (ev.shiftKey || ev.metaKey || ev.ctrlKey) {
       state.selection = state.selection.includes(id)
@@ -329,9 +367,9 @@ $("#stage").addEventListener("pointermove", (ev) => {
     return;
   }
 
-  const el = state.doc.elements.find((e) => e.id === drag.id);
-  if (!el) return;
-  const step = ev.altKey ? 0.01 : (state.doc.view?.snap_mm ?? 0.5); // Alt 关吸附
+  const els = state.doc.elements.filter((e) => drag.ids.includes(e.id));
+  if (!els.length) return;
+  const step = ev.shiftKey ? 0.01 : (state.doc.view?.snap_mm ?? 0.5); // Shift 精调
   const [dx, dy] = [snap(mx, step) - snap(drag.last[0], step), snap(my, step) - snap(drag.last[1], step)];
   if (dx || dy) {
     if (!drag.committed) {
@@ -365,7 +403,7 @@ window.addEventListener("keydown", (ev) => {
   const els = selectedElements();
   const step = ev.shiftKey ? 1 : 0.1;
   const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[ev.key];
-  if (nudge && els.length && els.every((e) => editable(state.doc, e))) {
+  if (nudge && els.length && els.every((e) => canEdit(e))) {
     commit();
     for (const el of els) move(el, ...nudge);
     render();
@@ -686,6 +724,7 @@ if (query.has("demo")) {
   renderInspector();
 }
 if (query.get("mode") === "preview") setMode("preview");
+if (query.get("focus") && LAYERS.some((l) => l.id === query.get("focus"))) setFocus(query.get("focus"));
 
 // 无头冒烟测试：在真实浏览器里跑一遍"加元素 → 移动 → 校验 → 导出"
 if (query.has("selftest")) {
@@ -703,13 +742,29 @@ if (query.has("selftest")) {
   })();
   const toml = uiToml(d);
   const svg = panelSvg(d, state.assets, { controls: true, values: {} });
+  // 真实指针事件走一遍"选中 + 拖动"（用户报过拖不动，必须由这条路验证）
+  const dragOk = (() => {
+    const knob = d.elements.find((e) => e.kind === "knob" && e.param);
+    const node = document.querySelector(`[data-elid="${knob.id}"]`);
+    if (!node) return "no-node";
+    const r = node.getBoundingClientRect();
+    const at = (dx, dy) => ({ clientX: r.left + r.width / 2 + dx, clientY: r.top + r.height / 2 + dy, bubbles: true });
+    const before = [...knob.center];
+    node.dispatchEvent(new PointerEvent("pointerdown", at(0, 0)));
+    $("#stage").dispatchEvent(new PointerEvent("pointermove", at(9, 9)));
+    window.dispatchEvent(new PointerEvent("pointerup", at(9, 9)));
+    const after = knob.center;
+    return after[0] !== before[0] || after[1] !== before[1] ? true : "stuck";
+  })();
+
   const ok =
     added === 3 &&
     moved &&
+    dragOk === true &&
     toml.includes("[[ui.knobs]]") &&
     toml.includes("[[ui.toggles]]") &&
     toml.includes("[[ui.leds]]") &&
     svg.startsWith("<svg") &&
     svg.includes('data-control="knob"');
-  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} toml=${toml.length}B svg=${svg.length}B`;
+  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} drag=${dragOk} toml=${toml.length}B svg=${svg.length}B`;
 }

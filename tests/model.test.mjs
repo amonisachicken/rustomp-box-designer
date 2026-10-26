@@ -128,16 +128,15 @@ test("load 拒绝未知版本", () => {
   assert.throws(() => load('{"version":99}'), /版本/);
 });
 
-test("图层默认可见可编辑；隐藏/锁定后不可编辑", () => {
+test("图层：隐藏后不可编辑；锁定逻辑已退役（改用焦点）", () => {
   const d = doc();
   const k = factory.knob(d, { param: "gain" });
   d.elements.push(k);
   assert.equal(editable(d, k), true);
-  d.layers = { knobs: { hidden: true, locked: false } };
+  d.layers = { knobs: { hidden: true } };
   assert.equal(editable(d, k), false);
-  d.layers = { knobs: { hidden: false, locked: true } };
-  assert.equal(layerState(d, "knobs").locked, true);
-  assert.equal(editable(d, k), false);
+  d.layers = { knobs: { hidden: false } };
+  assert.equal(editable(d, k), true);
 });
 
 test("吸附：旋钮拖到画布中线附近会被吸到正中", () => {

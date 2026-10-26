@@ -29,7 +29,9 @@ const flattenable = (el) => ["rect", "image", "led", "button"].includes(el.kind)
  * @param opts.values    预览时的参数值 { [elementId]: 0..1 | bool }
  */
 export function panelSvg(doc, assets, opts = {}) {
-  const { controls = false, values = {}, bypassed = false } = opts;
+  const { controls = false, values = {}, bypassed = false, dimLayers = null } = opts;
+  // 非焦点图层整体降低不透明度（画布上"虚化"，但仍可见位置）
+  const wrap = (layer, html) => (dimLayers?.has(layer) ? `<g opacity="0.28">${html}</g>` : html);
   const [W, H] = doc.canvas.canvas_mm;
   const out = [];
   out.push(
@@ -42,19 +44,23 @@ export function panelSvg(doc, assets, opts = {}) {
   const order = ["background", "artwork", "silkscreen", "leds", "buttons"];
   for (const layer of order) {
     for (const el of doc.elements.filter((e) => layerOf(e) === layer && flattenable(e))) {
-      out.push(flattenElement(el, assets, values));
+      out.push(wrap(layer, flattenElement(el, assets, values)));
     }
   }
 
   if (controls) {
     // 之后按运行时的绘制顺序：LED → 旋钮 → 拨杆 → 脚踏按下反馈
     for (const el of doc.elements.filter((e) => e.kind === "led")) {
-      out.push(ledCircle(el, values[el.id] ?? el.lit, bypassed));
+      out.push(wrap("leds", ledCircle(el, values[el.id] ?? el.lit, bypassed)));
     }
-    for (const el of doc.elements.filter((e) => e.kind === "knob")) out.push(knobSprite(el, assets, values));
-    for (const el of doc.elements.filter((e) => e.kind === "toggle")) out.push(toggleSprite(el, assets, values));
+    for (const el of doc.elements.filter((e) => e.kind === "knob")) {
+      out.push(wrap("knobs", knobSprite(el, assets, values)));
+    }
+    for (const el of doc.elements.filter((e) => e.kind === "toggle")) {
+      out.push(wrap("toggles", toggleSprite(el, assets, values)));
+    }
     for (const el of doc.elements.filter((e) => e.kind === "button")) {
-      if (values[el.id]) out.push(buttonPress(el, assets, doc.canvas.background));
+      if (values[el.id]) out.push(wrap("buttons", buttonPress(el, assets, doc.canvas.background)));
     }
   }
 

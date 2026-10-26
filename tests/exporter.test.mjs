@@ -148,3 +148,19 @@ test("旁通时 LED 去色变灰（与运行时的 led_grey 同一公式）", ()
   };
   assert.ok(lum(greyColour) > lum("rgb(38,38,38)"), "灰灯不该是接近黑");
 });
+
+test("焦点外的图层整体虚化（但仍在原位可见）", () => {
+  const d = demo();
+  const none = panelSvg(d, assets(), { controls: true, values: {} });
+  const focused = panelSvg(d, assets(), {
+    controls: true,
+    values: {},
+    dimLayers: new Set(["silkscreen", "leds", "toggles", "buttons"]),
+  });
+  assert.ok(!none.includes('opacity="0.28"'));
+  // 丝印、LED、拨杆、脚踏都该被包一层半透明
+  assert.ok((focused.match(/opacity="0\.28"/g) ?? []).length >= 4);
+  // 焦点图层（旋钮）不虚化
+  const knobs = focused.split("\n").filter((l) => l.includes('data-control="knob"'));
+  assert.ok(knobs.length && !knobs.some((l) => l.includes('opacity="0.28"')));
+});
