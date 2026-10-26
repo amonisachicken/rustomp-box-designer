@@ -22,12 +22,12 @@ export const ASSETS = [
     "kind": "knob",
     "file": "assets/knobs/knob_round_dark.svg",
     "size_mm": [
-      15.0036,
-      15.0036
+      19.999,
+      19.999
     ],
-    "r_outer_mm": 7.3731,
+    "r_outer_mm": 9.8319,
     "r_inner_mm": null,
-    "cx_pt": 21.26,
+    "cx_pt": 28.33,
     "hex_center_mm": null
   },
   {

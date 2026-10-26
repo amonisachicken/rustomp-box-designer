@@ -23,6 +23,9 @@ import {
   unionBox,
   toggleDy,
   syncTogglePivot,
+  importSvg,
+  assetInfo,
+  mergedAssets,
 } from "./model.js";
 import { panelSvg, uiToml, parseParams, num } from "./exporter.js";
 
@@ -64,7 +67,7 @@ function render() {
 
   // 编辑时也要画旋钮/拨杆（否则看不见自己在拖什么）；导出底图时才排除它们
   const doc = visibleDoc();
-  const svg = panelSvg(doc, state.assets, {
+  const svg = panelSvg(doc, mergedAssets(state.doc, state.assets), {
     controls: true,
     values: state.mode === "preview" ? state.values : {},
     bypassed: state.mode === "preview" && state.bypassed,
@@ -174,29 +177,54 @@ function redo() {
 }
 
 // ---------- 素材库 ----------
-const KIND_TITLE = { knob: "旋钮", toggle: "拨杆（两态）", led: "LED", button: "脚踏", label: "丝印标签" };
+const KIND_TITLE = {
+  knob: "旋钮",
+  toggle: "拨杆（两态）",
+  led: "LED",
+  button: "脚踏",
+  silkscreen: "丝印（内置标签）",
+  artwork: "装饰（导入）",
+  silk_import: "丝印（导入）",
+};
+
+/** 导入素材的缩略图（内联 SVG，省一次请求） */
+function svgThumb(svg) {
+  return `<div class="thumb">${svg}</div>`;
+}
 
 function renderLibrary() {
+  const imp = state.doc.imported ?? [];
   const groups = {
     knob: byKind("knob"),
     toggle: Object.keys(SWITCH_PAIRS),
     led: byKind("led"),
     button: FOOTSWITCHES,
-    label: byKind("label"),
+    silkscreen: byKind("label"),
+    artwork: imp.filter((a) => a.kind === "artwork"),
+    silk_import: imp.filter((a) => a.kind === "silkscreen"),
   };
   const html = Object.entries(groups)
     .map(([kind, items]) => {
-      const dimmed = KIND_LAYER[kind] !== state.focus;
+      // 每组的"图层"：label/丝印导入 → silkscreen；装饰导入 → artwork
+      const groupLayer = { knob: "knobs", toggle: "toggles", led: "leds", button: "buttons", silkscreen: "silkscreen", silk_import: "silkscreen", artwork: "artwork" }[kind];
+      const dimmed = groupLayer !== state.focus;
+      if (!items.length && kind !== "artwork" && kind !== "silk_import") return "";
       const cells = items
         .map((it) => {
-          // 拨杆这一组是「pair 名」，缩略图取 up 态；其它组直接是素材 id
           const id = typeof it === "string" ? it : it.id;
+          if (kind === "artwork" || kind === "silk_import") {
+            // 导入素材：直接内联 SVG 当缩略图
+            const a = imp.find((x) => x.id === id);
+            return `<div class="asset${dimmed ? " dimmed" : ""}" data-add="imported" data-id="${id}" data-layer="${a.kind}" title="${id}">
+              ${svgThumb(a.svg)}<span>${id.replace(/^imp_/, "")}</span></div>`;
+          }
           const file = kind === "toggle" ? byId(SWITCH_PAIRS[id].up).file : byId(id).file;
-          const wide = kind === "label" ? " wide" : "";
+          const wide = kind === "silkscreen" ? " wide" : "";
           return `<div class="asset${wide}${dimmed ? " dimmed" : ""}" data-add="${kind}" data-id="${id}" title="${id}">
             <img src="${file}" alt="${id}"/><span>${id.replace(/^label_/, "")}</span></div>`;
         })
         .join("");
+      if (!cells) return "";
       return `<h3>${KIND_TITLE[kind]}</h3><div class="asset-grid">${cells}</div>`;
     })
     .join("");
@@ -425,7 +453,7 @@ function renderInspector() {
       .map((p) => `<option value="${p}" ${p === cur ? "selected" : ""}>${p || "（未绑定）"}</option>`)
       .join("");
   const numInput = (label, key, obj = el, opts = {}) =>
-    `<div class="row"><label>${label}</label><input type="number" step="${opts.step ?? 0.1}" data-key="${key}" ${
+    `<div class="row"><label>${label}</label><input type="number" step="${opts.step ?? 1}" data-key="${key}" ${
       opts.obj ? `data-obj="${opts.obj}"` : ""
     } value="${obj?.[key] ?? 0}"/></div>`;
 
@@ -450,7 +478,7 @@ function renderInspector() {
       <button data-distribute="x">横向</button><button data-distribute="y">纵向</button></span></div>`;
     // 批量改：同类元素共有字段
     const kinds = [...new Set(els.map((e) => e.kind))];
-    if (kinds.length === 1 && ["knob", "led", "button"].includes(kinds[0])) {
+    if (kinds.length === 1 && ["led", "button"].includes(kinds[0])) {
       body += numInput("半径 mm（全部）", "radius", els[0]);
     }
     if (kinds.length === 1 && kinds[0] === "image") {
@@ -466,7 +494,8 @@ function renderInspector() {
     if (el.kind === "knob") {
       body += numInput("中心 x", 0, el.center, { obj: "center" }).replace('data-key="0"', 'data-key="0" data-vec="center"');
       body += numInput("中心 y", 1, el.center, { obj: "center" }).replace('data-key="1"', 'data-key="1" data-vec="center"');
-      body += numInput("半径 mm", "radius");
+      // 尺寸由素材决定（命中半径 = 贴图宽/2），不给调
+      body += `<div class="row"><label>尺寸</label><span style="flex:1;font-size:11.5px;color:#6b6156">${el.image_size[0].toFixed(1)} × ${el.image_size[1].toFixed(1)} mm（随素材）</span></div>`;
       body += numInput("行程 °", "travel_deg", el, { step: 5 });
       body += `<div class="row"><label>素材</label><select data-key="asset">${byKind("knob")
         .map((a) => `<option ${a.id === el.asset ? "selected" : ""}>${a.id}</option>`)
@@ -483,6 +512,12 @@ function renderInspector() {
       body += numInput("中心 y", 1, el.center, { obj: "center" }).replace('data-key="1"', 'data-key="1" data-vec="center"');
       body += numInput("半径 mm", "radius");
       if (el.kind === "button") body += numInput("按下缩放", "press_scale", el, { step: 0.05 });
+    } else if (el.kind === "frame") {
+      body += `<p class="hint" style="font-size:11.5px;color:#6b6156">面板边框贴着画布，改画布尺寸会自动跟随；只需调内缩/圆角/线宽。</p>`;
+      body += numInput("内缩 mm", "margin", el, { step: 0.1 });
+      body += numInput("圆角 mm", "rx", el, { step: 0.1 });
+      body += numInput("线宽 mm", "strokeWidth", el, { step: 0.05 });
+      body += `<div class="row"><label>描边</label><input type="color" data-key="stroke" value="${el.stroke}"/></div>`;
     } else if (el.kind === "image") {
       body += numInput("x", "x");
       body += numInput("y", "y");
@@ -609,9 +644,9 @@ function onInspectorInput(ev) {
     el[key] = int(t.value);
     // 拨杆：y_down 与 pivot 必须跟着（六边形中心补偿）
     if (el.kind === "toggle") syncTogglePivot(el);
-  } else if (key === "w" || key === "h" || key === "rx") {
+  } else if (key === "w" || key === "h") {
     el[key] = int(t.value);
-  } else if (key === "radius" || key === "press_scale" || key === "travel_deg" || key === "rot") {
+  } else if (["radius", "press_scale", "travel_deg", "rot", "rx", "margin"].includes(key)) {
     el[key] = Number(t.value);
   } else if (key === "strokeWidth") {
     el[key] = Number(t.value);
@@ -652,6 +687,54 @@ $("#btnNew").addEventListener("click", () => {
 });
 
 $("#btnOpen").addEventListener("click", () => $("#fileInput").click());
+
+// ---------- 导入外部 SVG（D-014：类必须手选，只允许装饰/丝印） ----------
+let pendingSvgs = [];
+$("#btnImport").addEventListener("click", () => {
+  if (!state.focus || !["artwork", "silkscreen"].includes(state.focus)) {
+    $("#stHint").textContent = "导入前先聚焦「装饰」或「丝印」图层（导入的素材只属于这两层）";
+    return;
+  }
+  $("#svgInput").click();
+});
+$("#svgInput").addEventListener("change", async (e) => {
+  const files = [...(e.target.files ?? [])];
+  e.target.value = "";
+  if (!files.length) return;
+  pendingSvgs = await Promise.all(files.map(async (f) => ({ name: f.name, svg: await f.text() })));
+  // 默认选中当前焦点图层对应的类
+  document.querySelector(`input[name="impKind"][value="${state.focus}"]`).checked = true;
+  $("#impList").textContent = pendingSvgs.map((f) => f.name).join("、");
+  $("#dlgImport").showModal();
+});
+$("#impCancel").addEventListener("click", () => {
+  pendingSvgs = [];
+  $("#dlgImport").close();
+});
+$("#impOk").addEventListener("click", () => {
+  const kind = document.querySelector('input[name="impKind"]:checked').value;
+  const d = state.doc;
+  commit();
+  const added = [];
+  for (const f of pendingSvgs) {
+    try {
+      const item = importSvg(d, { name: f.name, svg: f.svg, kind });
+      added.push(item.id);
+    } catch (err) {
+      alert(`${f.name}：${err.message}`);
+    }
+  }
+  pendingSvgs = [];
+  $("#dlgImport").close();
+  if (added.length) {
+    state.focus = kind; // 焦点跟到导入的层
+    $("#stHint").textContent = `已导入 ${added.length} 个素材（${kind}），在左侧素材库双击使用`;
+  }
+  renderLibrary();
+  render();
+  renderLayers();
+  renderInspector();
+});
 $("#fileInput").addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;

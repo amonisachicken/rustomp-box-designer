@@ -15,7 +15,8 @@ rm -rf "$OUT"
 node scripts/export.mjs examples/sparklin.box.json --out "$OUT" | tail -3
 
 echo "== 4/4 产物尺寸校验（12 px/mm）"
-python3 - "$OUT" <<'PY'
+KNOB_MM="$(node --input-type=module -e 'import {byId} from "./src/assets.gen.js"; const a=byId("knob_round_dark"); console.log(a.size_mm[0], a.size_mm[1]);')"
+python3 - "$OUT" "$KNOB_MM" <<'PY'
 import struct, sys, pathlib
 out = pathlib.Path(sys.argv[1])
 def png_size(p):
@@ -23,7 +24,8 @@ def png_size(p):
     w, h = struct.unpack(">II", d[16:24])
     return w, h
 ok = True
-for name, mm in [("panel.png", (60, 112)), ("knob_round_dark.png", (15.0, 15.0))]:
+knob = tuple(float(v) for v in sys.argv[2].split())
+for name, mm in [("panel.png", (60, 112)), ("knob_round_dark.png", knob)]:
     p = out / name
     w, h = png_size(p)
     want = (round(mm[0] * 12), round(mm[1] * 12))

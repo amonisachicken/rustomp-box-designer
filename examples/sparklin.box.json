@@ -47,24 +47,20 @@
   ],
   "elements": [
     {
-      "id": "r1",
-      "kind": "rect",
-      "x": 1.2,
-      "y": 1.2,
-      "w": 57.6,
-      "h": 109.6,
+      "id": "f1",
+      "kind": "frame",
+      "layer": "artwork",
+      "margin": 1.2,
       "rx": 2.2,
-      "fill": "none",
-      "stroke": "#231815",
       "strokeWidth": 0.35,
-      "layer": "artwork"
+      "stroke": "#231815"
     },
     {
       "id": "i1",
       "kind": "image",
       "asset": "label_level",
       "x": 10.58,
-      "y": 34.7,
+      "y": 35.3,
       "rot": 0,
       "layer": "silkscreen",
       "size": [
@@ -77,7 +73,7 @@
       "kind": "image",
       "asset": "label_gain",
       "x": 40.76,
-      "y": 34.29,
+      "y": 35.3,
       "rot": 0,
       "layer": "silkscreen",
       "size": [
@@ -90,7 +86,7 @@
       "kind": "image",
       "asset": "label_clip",
       "x": 26.14,
-      "y": 34.4,
+      "y": 35.3,
       "rot": 0,
       "layer": "silkscreen",
       "size": [
@@ -150,12 +146,11 @@
       "param": "level",
       "center": [
         15.32,
-        25.26
+        24.0
       ],
-      "radius": 7.5,
       "image_size": [
-        15.0,
-        15.0
+        19.999,
+        19.999
       ],
       "travel_deg": 270,
       "drag_full_range_px": 260,
@@ -168,12 +163,11 @@
       "param": "gain",
       "center": [
         44.64,
-        24.85
+        23.59
       ],
-      "radius": 7.5,
       "image_size": [
-        15.0,
-        15.0
+        19.999,
+        19.999
       ],
       "travel_deg": 270,
       "drag_full_range_px": 260,
@@ -205,5 +199,6 @@
     "snap_to_targets": true,
     "show_safe": true
   },
-  "layers": {}
+  "layers": {},
+  "imported": []
 }

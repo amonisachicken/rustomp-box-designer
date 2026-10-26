@@ -1,5 +1,6 @@
 // `.box.json` 的数据模型：默认文档、元素工厂、校验（docs/00-decisions.md D-002/D-004）
-import { byId } from "./assets.gen.js";
+import { byId, ASSETS } from "./assets.gen.js";
+import { flatten } from "./embed.js";
 
 export const VERSION = 1;
 
@@ -29,7 +30,7 @@ export const LAYERS = [
 export function newDoc({ name = "未命名面板", preset = "1590B", params = [] } = {}) {
   const p = PRESETS[preset] ?? PRESETS["1590B"];
   const [w, h] = p.canvas_mm;
-  return {
+  const doc = {
     version: VERSION,
     name,
     canvas: {
@@ -43,6 +44,8 @@ export function newDoc({ name = "未命名面板", preset = "1590B", params = []
     },
     params, // 从 rustomp.toml 读来的 [[params]]（D-009），只读
     elements: [],
+    // 外部导入的 SVG 素材（自包含：svg 文本就存在设计文件里）
+    imported: [], // [{ id, kind: "artwork" | "silkscreen", name, svg, size_mm }]
     // 视图/图层状态（D1）：不影响导出，只影响编辑
     view: {
       safe_margin_mm: 4, // 面板边缘的安全区（丝印/控件别贴边）
@@ -53,13 +56,21 @@ export function newDoc({ name = "未命名面板", preset = "1590B", params = []
     layers: {}, // { [layerId]: { hidden: false } }
     nextId: 1,
   };
+  // 新建面板自带一个装饰性边框（贴画布，随画布尺寸自动变）
+  doc.elements.push(factory.frame(doc));
+  return doc;
 }
 
 const uid = (doc, kind) => `${kind}${doc.nextId++}`;
 
 /** 元素工厂：四类控件 + 两类纯美术 */
 export const factory = {
-  /** 旋钮（运行时整图旋转；指针朝上 = 0.5） */
+  /**
+   * 旋钮（运行时整图旋转；指针朝上 = 0.5）。
+   *
+   * **尺寸由素材决定**，不给用户调：命中半径 = 贴图宽/2，导出时算出来。
+   * （以前留了个 `radius` 输入框，改它只会让点击区和美术对不上，已删。）
+   */
   knob(doc, { asset = "knob_round_dark", param = "", center = [30, 30], travel_deg = 270 } = {}) {
     const a = byId(asset);
     return {
@@ -68,11 +79,18 @@ export const factory = {
       asset,
       param,
       center,
-      radius: +(a.size_mm[0] / 2).toFixed(2),
       image_size: a.size_mm,
       travel_deg,
       drag_full_range_px: 260,
     };
+  },
+
+  /**
+   * 面板边框（装饰层）：圆角矩形，**自动贴合画布**，只暴露"内缩/圆角/线宽"。
+   * 改画布尺寸它自己跟着变，不用手工改数值。
+   */
+  frame(doc, { margin = 1.2, rx = 2.2, strokeWidth = 0.35, stroke = "#231815" } = {}) {
+    return { id: uid(doc, "f"), kind: "frame", layer: "artwork", margin, rx, strokeWidth, stroke };
   },
 
   /**
@@ -142,9 +160,9 @@ export const factory = {
     };
   },
 
-  /** 纯美术/丝印：引用一个素材（label/形状/logo），左上角定位 */
-  image(doc, { asset = "label_gain", x = 20, y = 20, rot = 0, layer = "silkscreen" } = {}) {
-    const a = byId(asset);
+  /** 纯美术/丝印：引用一个素材（内置标签或外部导入的 SVG），左上角定位 */
+  image(doc, { asset = "label_gain", x = 20, y = 20, rot = 0, layer = "silkscreen", size = null } = {}) {
+    const a = size ? { size_mm: size } : byId(asset);
     return { id: uid(doc, "i"), kind: "image", asset, x, y, rot, layer, size: a.size_mm };
   },
 
@@ -174,6 +192,62 @@ export function syncTogglePivot(el) {
   el.pivot = [+(el.x + hx).toFixed(2), +(el.y_up + hy).toFixed(2)];
 }
 
+const PT_TO_MM = 25.4 / 72;
+
+/**
+ * 从任意 SVG 文本里量出物理尺寸（毫米）。
+ * 优先 viewBox（我们所有素材都是 pt 坐标），退而用 width/height 属性。
+ */
+export function svgSizeMm(svg) {
+  const vb = /viewBox="([-\d.\s]+)"/.exec(svg);
+  if (vb) {
+    const [, , w, h] = vb[1].trim().split(/\s+/).map(Number);
+    return [+(w * PT_TO_MM).toFixed(3), +(h * PT_TO_MM).toFixed(3)];
+  }
+  const w = /\bwidth="([\d.]+)(mm|pt|px)?"/.exec(svg);
+  const h = /\bheight="([\d.]+)(mm|pt|px)?"/.exec(svg);
+  if (!w || !h) return null;
+  const conv = (m) => {
+    const v = Number(m[1]);
+    const unit = m[2] ?? "px";
+    return unit === "mm" ? v : unit === "pt" ? v * PT_TO_MM : v * 25.4 / 96;
+  };
+  return [+conv(w).toFixed(3), +conv(h).toFixed(3)];
+}
+
+/** 导入一个外部 SVG 素材（D-014：类必须由用户指定，只允许装饰/丝印） */
+export function importSvg(doc, { name, svg, kind }) {
+  if (kind !== "artwork" && kind !== "silkscreen") {
+    throw new Error("导入素材的类只能是 装饰(artwork) 或 丝印(silkscreen)");
+  }
+  const size = svgSizeMm(svg);
+  if (!size || !(size[0] > 0 && size[1] > 0)) throw new Error("这个 SVG 读不出尺寸（缺 viewBox / width-height）");
+  flatten(svg); // 提前校验能内联（展平 CSS、删 id）
+  const base = (name || "imported").replace(/\.svg$/i, "").replace(/[^A-Za-z0-9_\u4e00-\u9fa5-]/g, "_");
+  let id = `imp_${base}`;
+  let n = 2;
+  while (doc.imported.some((a) => a.id === id)) id = `imp_${base}_${n++}`;
+  const item = { id, kind, name: base, svg, size_mm: size };
+  doc.imported.push(item);
+  return item;
+}
+
+/** 统一取素材信息：内置清单 or 本项目导入 */
+export function assetInfo(doc, id) {
+  if (!id) return null;
+  const imp = (doc.imported ?? []).find((a) => a.id === id);
+  if (imp) return { id: imp.id, kind: imp.kind === "artwork" ? "artwork" : "silkscreen", size_mm: imp.size_mm, svg: imp.svg, imported: true };
+  const a = byId(id);
+  return a ? { ...a } : null;
+}
+
+/** 全部素材文本（内置从 assets 传入，导入的在 doc 里）——导出时合并用 */
+export function mergedAssets(doc, builtin) {
+  const out = { ...builtin };
+  for (const a of doc.imported ?? []) out[a.id] = a.svg;
+  return out;
+}
+
 /** 素材种类 → 图层（素材库里要按焦点虚化） */
 export const KIND_LAYER = {
   knob: "knobs",
@@ -192,19 +266,32 @@ export function layerOf(el) {
   return el.layer ?? "silkscreen";
 }
 
-/** 元素的外接框（mm），用于选中高亮与拖拽命中 */
-export function bbox(el) {
+/**
+ * 元素的外接框（mm）。
+ * `frame`（面板边框）是**贴画布**的，尺寸随画布变，所以要把 canvas 传进来。
+ */
+export function bbox(el, [W, H] = [60, 112]) {
   switch (el.kind) {
-    case "knob":
+    case "knob": {
+      // 半径由素材决定：命中半径 = 贴图宽/2
+      const [w, h] = el.image_size ?? [el.radius * 2, el.radius * 2];
+      return { x: el.center[0] - w / 2, y: el.center[1] - h / 2, w, h };
+    }
     case "led":
     case "button": {
-      const r = el.kind === "knob" ? el.radius : el.radius;
+      const r = el.radius;
       return { x: el.center[0] - r, y: el.center[1] - r, w: r * 2, h: r * 2 };
     }
     case "toggle":
       return { x: el.x, y: el.y_up, w: el.width, h: el.height };
-    case "image":
-      return { x: el.x, y: el.y, w: el.size[0], h: el.size[1] };
+    case "image": {
+      const a = el.size ?? [10, 10];
+      return { x: el.x, y: el.y, w: a[0], h: a[1] };
+    }
+    case "frame": {
+      const m = el.margin ?? 1.2;
+      return { x: m, y: m, w: Math.max(0, W - m * 2), h: Math.max(0, H - m * 2) };
+    }
     default:
       return { x: el.x, y: el.y, w: el.w, h: el.h };
   }
@@ -212,6 +299,7 @@ export function bbox(el) {
 
 /** 移动元素（统一入口，避免每个调用点各写一份分支） */
 export function move(el, dx, dy) {
+  if (el.kind === "frame") return; // 边框贴着画布，改 margin 而不是挪位置
   switch (el.kind) {
     case "knob":
     case "led":
@@ -262,7 +350,11 @@ export function validate(doc) {
         problems.push(`${el.id}：参数 "${el.param}" 不在 rustomp.toml 里`);
       }
     }
-    if (el.asset && !byId(el.asset)) problems.push(`${el.id}：素材 "${el.asset}" 不存在`);
+    if (el.asset && !assetInfo(doc, el.asset)) problems.push(`${el.id}：素材 "${el.asset}" 不存在`);
+    if (el.asset && ["knob", "toggle", "button", "led"].includes(el.kind) && !byId(el.asset) && el.kind !== "toggle") {
+      // 控件只能用内置素材（外部导入只允许装饰/丝印）
+      if (!byId(el.asset)) problems.push(`${el.id}：控件不能用导入素材 "${el.asset}"`);
+    }
     if (el.kind === "button" && el.image_hold && !byId(el.image_hold)) {
       problems.push(`${el.id}：按住态素材 "${el.image_hold}" 不存在`);
     }
@@ -286,7 +378,8 @@ export function validate(doc) {
     }
     if (el.kind === "knob" && el.travel_deg <= 0) problems.push(`${el.id}：travel_deg 必须 > 0`);
 
-    const b = bbox(el);
+    if (el.kind === "frame") continue; // 贴画布，天然不越界
+    const b = bbox(el, doc.canvas.canvas_mm);
     const [W, H] = doc.canvas.canvas_mm;
     if (b.x < -1 || b.y < -1 || b.x + b.w > W + 1 || b.y + b.h > H + 1) {
       problems.push(`${el.id}：超出画布（画布 ${W}×${H} mm）`);
@@ -303,7 +396,15 @@ export function load(text) {
   if (doc.version !== VERSION) throw new Error(`不支持的 .box.json 版本：${doc.version}`);
   doc.params ??= [];
   doc.elements ??= [];
+  doc.imported ??= [];
   doc.nextId ??= doc.elements.length + 1;
+  // 迁移：旋钮尺寸只认素材（旧文件里可能存着过期的 image_size / radius）
+  for (const el of doc.elements) {
+    if (el.kind !== "knob") continue;
+    const a = byId(el.asset);
+    if (a) el.image_size = a.size_mm;
+    delete el.radius;
+  }
   return doc;
 }
 
@@ -360,9 +461,9 @@ export function snapTargets(doc, el, threshold = 1.2) {
 }
 
 /** 一组元素的联合外接框 */
-export function unionBox(els) {
+export function unionBox(els, canvas) {
   if (!els.length) return null;
-  const bs = els.map(bbox);
+  const bs = els.map((e) => bbox(e, canvas));
   const x = Math.min(...bs.map((b) => b.x));
   const y = Math.min(...bs.map((b) => b.y));
   const r = Math.max(...bs.map((b) => b.x + b.w));
@@ -377,9 +478,9 @@ export function unionBox(els) {
 export function alignMoves(doc, els, mode, target = "selection") {
   if (els.length < 2 && target === "selection") return [];
   const [W, H] = doc.canvas.canvas_mm;
-  const box = target === "canvas" ? { x: 0, y: 0, w: W, h: H } : unionBox(els);
+  const box = target === "canvas" ? { x: 0, y: 0, w: W, h: H } : unionBox(els, doc.canvas.canvas_mm);
   return els.map((el) => {
-    const b = bbox(el);
+    const b = bbox(el, doc.canvas.canvas_mm);
     switch (mode) {
       case "left":
         return { id: el.id, dx: box.x - b.x, dy: 0 };
@@ -400,9 +501,9 @@ export function alignMoves(doc, els, mode, target = "selection") {
 }
 
 /** 等间距（axis = "x" | "y"）：把中间的元素按两端平均摊开 */
-export function distributeMoves(els, axis = "x") {
+export function distributeMoves(els, axis = "x", canvas) {
   if (els.length < 3) return [];
-  const withBox = els.map((el) => ({ el, b: bbox(el) }));
+  const withBox = els.map((el) => ({ el, b: bbox(el, canvas) }));
   const key = axis === "x" ? "x" : "y";
   const size = axis === "x" ? "w" : "h";
   withBox.sort((a, b) => a.b[key] - b.b[key]);

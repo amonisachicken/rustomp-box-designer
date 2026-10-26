@@ -142,7 +142,7 @@ let want = [rect.width() * ppp, rect.height() * ppp];
 
 | 目录 | 内容 | 尺寸（mm） |
 |---|---|---|
-| `knobs/` | `knob_round_dark`（15.0 / 用这个）、`knob_round_light`（20.35）、`knob_heptagon_large_dark`（27.0） | 指针朝上，运行时整图旋转 |
+| `knobs/` | `knob_round_dark`（**20.0**，在用）、`knob_round_light`（20.35）、`knob_heptagon_large_dark`（27.0） | 指针朝上，运行时整图旋转；**尺寸只由素材决定** |
 | `sw/` | `toggle_small_{up,down}`（8.35×8.89）、`toggle_large_{up,down}`（14.35×15.30）、`3pdt_alt`（14.35）+ **`3pdt_alt_hold`（按住态，同尺寸）** | 拨杆两态各自一张；脚踏有按住态就整张换 |
 | `leds/` | `led_{red,green,blue}` | 6.27；外圈 r=3.0，**镜片 r=2.249**（运行时画这个半径） |
 | `labels/` | 23 个单词丝印（attack/bias/boost/clip/comp/depth/dist/drive/fuzz/gain/input/level/mix/output/range/rate/release/sustain/tone/volume…） | 高 2.37，宽随字；**全部是矢量 path，不是文字** |

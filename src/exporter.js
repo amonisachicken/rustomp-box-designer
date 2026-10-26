@@ -18,7 +18,7 @@ export function num(v) {
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** 抽稀：只保留每层里真正"压进底图"的元素 */
-const flattenable = (el) => ["rect", "image", "led", "button"].includes(el.kind);
+const flattenable = (el) => ["rect", "frame", "image", "led", "button"].includes(el.kind);
 
 /**
  * 面板 SVG。
@@ -44,7 +44,7 @@ export function panelSvg(doc, assets, opts = {}) {
   const order = ["background", "artwork", "silkscreen", "leds", "buttons"];
   for (const layer of order) {
     for (const el of doc.elements.filter((e) => layerOf(e) === layer && flattenable(e))) {
-      out.push(wrap(layer, flattenElement(el, assets, values)));
+      out.push(wrap(layer, flattenElement(el, assets, values, doc.canvas.canvas_mm)));
     }
   }
 
@@ -68,8 +68,20 @@ export function panelSvg(doc, assets, opts = {}) {
   return out.join("\n") + "\n";
 }
 
-function flattenElement(el, assets, values) {
+function flattenElement(el, assets, values, canvas) {
   switch (el.kind) {
+    case "frame": {
+      // 面板边框：贴画布，只暴露内缩/圆角/线宽
+      const [W, H] = canvas ?? [60, 112];
+      const m = el.margin ?? 1.2;
+      const w = Math.max(0, W - m * 2);
+      const h = Math.max(0, H - m * 2);
+      return (
+        `<rect data-elid="${esc(el.id)}" x="${num(m)}" y="${num(m)}" width="${num(w)}" height="${num(h)}" ` +
+        `rx="${num(el.rx)}" fill="none" stroke="${esc(el.stroke)}" stroke-width="${num(el.strokeWidth)}" ` +
+        `pointer-events="all" stroke-linejoin="round"/>`
+      );
+    }
     case "rect": {
       const r = el.rx ? ` rx="${num(el.rx)}"` : "";
       return `<rect x="${num(el.x)}" y="${num(el.y)}" width="${num(el.w)}" height="${num(el.h)}"${r} fill="${esc(el.fill)}" stroke="${esc(el.stroke)}" stroke-width="${num(el.strokeWidth)}"/>`;
@@ -234,7 +246,7 @@ export function uiToml(doc) {
     L.push(`id = "${esc(el.id)}"`);
     L.push(`param = "${esc(el.param)}"`);
     L.push(`center = ${vec(el.center)}`);
-    L.push(`radius = ${num(el.radius)}`);
+    L.push(`radius = ${num(el.image_size[0] / 2)}`); // 命中半径 = 贴图宽/2（不给用户改）
     L.push(`asset = "${esc(el.asset)}"`);
     L.push(`image_size = ${vec(el.image_size)}`);
     L.push(`render = "rotate"`);
