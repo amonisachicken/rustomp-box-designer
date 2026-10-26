@@ -132,3 +132,29 @@ let want = [rect.width() * ppp, rect.height() * ppp];
 > 可选：底图再留 1.5× 余量（18 px/mm）应对"用户把窗口拉大"。成本是内存
 > （720×1344 ≈ 0.95 MB → 1080×2016 ≈ 2.2 MB）。第一版取 12 px/mm，
 > 高分辨率导出作为后续选项。
+
+---
+
+## 6. 现有素材清单（2026-10-26，自动索引）
+
+素材全部按 **pt 坐标 + viewBox** 画（Illustrator/Inkscape 默认），尺寸由
+`scripts/gen-assets.mjs` 从 viewBox 读出来写进 `src/assets.gen.js`（入库、可 diff、`--check` 防漂移）。
+
+| 目录 | 内容 | 尺寸（mm） |
+|---|---|---|
+| `knobs/` | `knob_round_dark`（15.0 / 用这个）、`knob_round_light`（20.35）、`knob_heptagon_large_dark`（27.0） | 指针朝上，运行时整图旋转 |
+| `sw/` | `toggle_small_{up,down}`（8.35×8.89）、`toggle_large_{up,down}`（14.35×15.30）、`3pdt`（10.76）、`3pdt_alt`（14.35） | 拨杆两态各自一张 |
+| `leds/` | `led_{red,green,blue}` | 6.27；外圈 r=3.0，**镜片 r=2.249**（运行时画这个半径） |
+| `labels/` | 23 个单词丝印（attack/bias/boost/clip/comp/depth/dist/drive/fuzz/gain/input/level/mix/output/range/rate/release/sustain/tone/volume…） | 高 2.37，宽随字；**全部是矢量 path，不是文字** |
+
+> 标签是 path 的这点很重要：运行时不渲染任何文字，所以不受宿主字体影响。
+> 也因此设计器**不需要**字体渲染（D-003「文字一律栅格化」）。
+
+## 7. 内联素材时的三个坑（都已在代码里解决，见 D-006）
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| path 坐标远在 viewBox 之外（`M253,393`） | 用 `<g transform>` 贴上去，图形跑到面板外面 | 用**嵌套 `<svg x y width height viewBox>`**，由嵌套 viewport 裁剪 |
+| 每个素材都叫 `.cls-1` / `.cls-2` | 内联多份时后一个把前一个的颜色覆盖掉 | 把 `<style>` 规则**展开成内联 `style`**，删掉 `<defs><style>` |
+| 自闭合标签（`<circle/>`）的样式加在 `/` 之后 | 样式被丢弃 → 圆变成黑色实心块 | 先剥掉尾部的 `/`，加完属性再补回去（`tests/embed.test.mjs` 有回归） |
+| `id="layer1"` / `id="svg1"` 重名 | 引用错乱 | 内联时删掉所有 `id` / `data-name` |

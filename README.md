@@ -18,24 +18,59 @@
 
 ---
 
-## 现状（2026-10-26）
-
-**只有契约文档，没有代码。** 先把"设计器要满足什么"写清楚，再约定实现规范、动手。
+## 现状（2026-10-26）：**D0 可用**
 
 | 项 | 状态 |
 |---|---|
-| 与 rustomp 的**面板契约**（`rustomp.toml [assets]/[ui]` 全字段） | ✅ `docs/01-contract-panel-toml.md` |
-| 运行时语义（`rustomp-gui::PanelSpec` 怎么画、坐标/缩放/贴图生命周期） | ✅ `docs/02-runtime-panelspec.md` |
-| 素材规范（PNG、@2x、透明通道、命名、尺寸关系） | ✅ `docs/03-assets.md` |
-| **待约定的实现规范**（技术栈、文件格式、控件库、导出方式…） | ✅ `docs/04-open-questions.md` |
-| **方案评审**（图层/图形库/mm 坐标/画布预设）与 v0.2 规范草案 | ✅ `docs/05-spec-review.md`（含 6 个待拍板项） |
-| 代码 | ⬜ 未开始（但契约已被第一个真实面板验证，见下） |
+| 契约 / 运行时语义 / 素材规范 / 方案评审 | ✅ `docs/01`–`docs/05` |
+| **决策**（D0 范围、技术栈、图层、坐标、导出、素材内联） | ✅ `docs/00-decisions.md` |
+| 画布编辑器（拖放、吸附、微调、属性面板、校验） | ✅ |
+| 四类控件：旋钮 / 拨杆 / LED / 脚踏 | ✅（多位开关走"多电路"，不做；数值显示暂不做） |
+| 预览 L1（拖旋钮 / 点拨杆 / 按脚踏 / LED 亮灭） | ✅ |
+| 导出：`panel.svg` + `panel.png` + 控件贴图 + `[assets]/[ui]` 标记块 | ✅ |
+| 用设计器复刻真实面板（Sparklin Drive） | ✅ `examples/sparklin.box.json` |
+| 数值/表头显示、素材热重载、1:1 打印 PDF | ⬜ 后续 |
+
+### 快速开始
+
+```bash
+./scripts/dev.sh            # → http://localhost:8765/    （零依赖，只需要 python3 + Node）
+./scripts/check.sh          # 素材清单 / 单元测试 / 导出 / 产物尺寸，一条命令全跑
+```
+
+浏览器里没有安装步骤（没有 npm 依赖）：`index.html` + 原生 ES modules。
+打开 `http://localhost:8765/?demo=1` 会直接载入示例面板。
+
+### 导出到插件项目
+
+```bash
+node scripts/export.mjs my.box.json --out ../rustomp/plugins/<插件>/assets
+# 逐行打印 ARTIFACT: <路径>，把 ui.toml 里的标记块粘进 rustomp.toml
+```
 
 > **契约验证**：`rustomp` 的 Sparklin Drive v2 已经用这套契约做出了第一个面板
 > （毫米坐标 60×112 mm、12 px/mm、旋钮整图旋转、拨杆两态、LED），
 > AU 报 CocoaUI 且音色与原无界面版一致（DEVLOG E61）。
 
 ---
+
+## 代码结构
+
+```text
+index.html              三栏界面（素材库 / 画布 / 属性面板）
+src/main.js             交互：拖放、吸附、预览、导出弹窗
+src/model.js            .box.json 数据模型 + 元素工厂 + 校验
+src/exporter.js         面板 SVG / 贴图清单 / [ui] TOML（**纯函数**，预览与导出共用）
+src/embed.js            素材 SVG 内联（展开 CSS 类、删 id、嵌套 viewBox 裁剪）
+src/assets.gen.js       素材清单（由 scripts/gen-assets.mjs 从 viewBox 生成，入库可 diff）
+assets/                 旋钮 / 拨杆 / LED / 脚踏 / 丝印标签（SVG，pt 坐标）
+scripts/gen-assets.mjs  扫素材 → 清单
+scripts/export.mjs      .box.json → SVG + PNG（Inkscape）+ ui.toml
+scripts/preview.mjs     渲染带控件的预览图（等同浏览器里看到的）
+scripts/check.sh        一条命令跑完全部校验
+tests/                  node --test（28 个用例）
+examples/sparklin.box.json   用设计器复刻的真实面板
+```
 
 ## 设计器的定位（先说清楚边界）
 
@@ -57,7 +92,8 @@
 | `docs/01-contract-panel-toml.md` | 契约：`[assets]` 与 `[ui]` 的每个字段、单位、默认值 |
 | `docs/02-runtime-panelspec.md` | 运行时语义：坐标缩放、旋钮角度映射、拨杆基线、LED、贴图生命周期 |
 | `docs/03-assets.md` | 素材规范与已知坑（@2x、alpha、六边形基线偏移 1.53） |
-| `docs/04-open-questions.md` | **待约定的实现规范**（技术栈 / 文件格式 / 控件库 / 导出 / 能力扩展） |
+| `docs/00-decisions.md` | **已拍板的决策**（D0 范围、技术栈、图层、坐标、导出、素材内联） |
+| `docs/04-open-questions.md` | 当初的 9 个开放问题（现已全部拍板，保留作理由存档） |
 
 ---
 

@@ -1,0 +1,17 @@
+{
+  "name": "rustomp-box-designer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "插件面板设计器：画面板 → rustomp.toml 的 [ui] + PNG 素材",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "dev": "./scripts/dev.sh",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "check": "./scripts/check.sh",
+    "assets": "node scripts/gen-assets.mjs",
+    "export": "node scripts/export.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

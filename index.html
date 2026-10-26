@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>rustomp-box-designer</title>
+    <style>
+      :root {
+        --ink: #231815;
+        --cream: #faf1e0;
+        --line: #d8cdb8;
+        --accent: #b4531c;
+        --bg: #2a2523;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        grid-template-columns: 200px 1fr 260px;
+        grid-template-areas: "top top top" "lib canvas insp" "status status status";
+        font: 13px/1.5 -apple-system, "Helvetica Neue", "PingFang SC", sans-serif;
+        color: var(--ink);
+        background: #efe7d8;
+        overflow: hidden;
+      }
+      button, select, input {
+        font: inherit;
+        color: inherit;
+        border: 1px solid var(--line);
+        background: #fffdf8;
+        border-radius: 4px;
+        padding: 3px 6px;
+      }
+      button { cursor: pointer; }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+      #top { grid-area: top; display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: var(--bg); color: #f6efe2; }
+      #top .spacer { flex: 1; }
+      #top input[type="text"] { width: 160px; background: #3b3532; color: #f6efe2; border-color: #4d4643; }
+      #mode { display: flex; gap: 0; }
+      #mode button { border-radius: 0; }
+      #mode button:first-child { border-radius: 4px 0 0 4px; }
+      #mode button:last-child { border-radius: 0 4px 4px 0; }
+      #mode button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+      #lib { grid-area: lib; overflow: auto; background: #f6efe2; border-right: 1px solid var(--line); padding: 8px; }
+      #lib h3 { margin: 12px 0 6px; font-size: 11px; letter-spacing: 0.08em; color: #7a6f63; text-transform: uppercase; }
+      #lib h3:first-child { margin-top: 0; }
+      .asset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .asset {
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+        padding: 6px 4px; border: 1px solid var(--line); border-radius: 5px; background: #fffdf8;
+        cursor: pointer; font-size: 10px; color: #6b6156;
+      }
+      .asset:hover { border-color: var(--accent); color: var(--accent); }
+      .asset { min-width: 0; }
+      .asset img { width: 100%; max-width: 100%; height: 34px; object-fit: contain; }
+      .asset span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .asset.wide img { height: 20px; }
+
+      #canvasWrap { grid-area: canvas; display: grid; place-items: center; padding: 14px; overflow: hidden; }
+      #stage { position: relative; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25); background: #fff; }
+      #stage svg { display: block; width: 100%; height: 100%; }
+      #stage .sel { fill: none; stroke: var(--accent); stroke-width: 0.35; stroke-dasharray: 1.2 0.8; }
+      #stage .grid line { stroke: #3a3a3a; stroke-width: 0.06; opacity: 0.16; }
+      .drag { cursor: move; }
+      body.preview #stage .drag { cursor: default; }
+
+      #insp { grid-area: insp; overflow: auto; background: #f6efe2; border-left: 1px solid var(--line); padding: 8px; }
+      #insp h3 { margin: 10px 0 6px; font-size: 11px; letter-spacing: 0.08em; color: #7a6f63; text-transform: uppercase; }
+      #insp h3:first-child { margin-top: 0; }
+      .row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+      .row label { flex: 0 0 78px; color: #6b6156; font-size: 12px; }
+      .row input, .row select { flex: 1; min-width: 0; }
+      .row input[type="number"] { text-align: right; }
+      .warn { color: #a3341c; font-size: 12px; }
+      .ok { color: #2f6b3a; font-size: 12px; }
+      #problems { margin: 4px 0 0; padding-left: 16px; }
+      #problems li { font-size: 11.5px; color: #a3341c; }
+      textarea { width: 100%; height: 120px; font: 11px/1.45 ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 6px; background: #fffdf8; }
+      #status { grid-area: status; display: flex; gap: 14px; padding: 4px 10px; background: var(--bg); color: #cfc4b6; font-size: 11.5px; }
+      #status b { color: #f6efe2; font-weight: 600; }
+      dialog { border: 1px solid var(--line); border-radius: 8px; padding: 16px; background: #fbf6ea; color: var(--ink); max-width: 520px; }
+      dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+      dialog h2 { margin: 0 0 8px; font-size: 15px; }
+      dialog code { display: block; background: #2a2523; color: #f6efe2; padding: 8px; border-radius: 4px; margin: 8px 0; font-size: 11.5px; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <div id="top">
+      <strong style="letter-spacing: 0.04em">box-designer</strong>
+      <input id="docName" type="text" placeholder="面板名称" title="去 .box.json 里的 name" />
+      <div id="mode">
+        <button data-mode="edit" class="on" title="拖动移动元素（Tab 切换）">编辑</button>
+        <button data-mode="preview" title="拖旋钮 / 点拨杆 / 按脚踏">预览</button>
+      </div>
+      <span class="spacer"></span>
+      <button id="btnNew" title="新建空白面板">新建</button>
+      <button id="btnOpen" title="打开 .box.json（或 rustomp.toml 读参数）">打开</button>
+      <button id="btnSave" title="下载 .box.json">保存</button>
+      <button id="btnExport" class="primary" title="导出 ui.toml / panel.svg；PNG 由 CLI 栅格化">导出</button>
+    </div>
+
+    <aside id="lib"></aside>
+    <main id="canvasWrap"><div id="stage"></div></main>
+    <aside id="insp"></aside>
+    <div id="status">
+      <span>坐标 <b id="stCursor">–</b></span>
+      <span>元素 <b id="stCount">0</b></span>
+      <span>画布 <b id="stCanvas">–</b></span>
+      <span>密度 <b id="stDensity">–</b></span>
+      <span class="spacer" style="flex: 1"></span>
+      <span id="stHint">点素材添加 · 拖动移动 · 方向键微调 · ⌫ 删除 · Tab 切模式</span>
+    </div>
+
+    <dialog id="dlgExport">
+      <h2>导出</h2>
+      <p id="expSummary"></p>
+      <p><button id="expToml">下载 ui.toml</button> <button id="expSvg">下载 panel.svg</button></p>
+      <p style="margin-bottom: 4px">PNG（12 px/mm）与贴图由 CLI 用 Inkscape 栅格化，去插件项目里跑：</p>
+      <code id="expCmd"></code>
+      <p id="expProblems" class="warn"></p>
+      <p style="text-align: right"><button id="expClose">关闭</button></p>
+    </dialog>
+
+    <input id="fileInput" type="file" accept=".json,.toml" hidden />
+    <script>
+      // 出错时把信息显示在状态栏，而不是只在控制台里（本地调试很需要）
+      addEventListener("error", (e) => {
+        const el = document.getElementById("stHint");
+        if (el) el.textContent = `⚠ ${e.message}（${e.filename?.split("/").pop()}:${e.lineno}）`;
+      });
+      addEventListener("unhandledrejection", (e) => {
+        const el = document.getElementById("stHint");
+        if (el) el.textContent = `⚠ ${e.reason?.message ?? e.reason}`;
+      });
+    </script>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
