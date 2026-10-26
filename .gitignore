@@ -1,0 +1,14 @@
+# Node
+node_modules/
+dist/
+.vite/
+
+# Rust
+target/
+
+# 设计器的产出（生成物按需入库，截图/临时文件不入库）
+/tmp/
+*.preview.png
+
+# 系统/编辑器
+.DS_Store
