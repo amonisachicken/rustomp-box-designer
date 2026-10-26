@@ -744,7 +744,8 @@ if (query.has("selftest")) {
   const svg = panelSvg(d, state.assets, { controls: true, values: {} });
   // 真实指针事件走一遍"选中 + 拖动"（用户报过拖不动，必须由这条路验证）
   const dragOk = (() => {
-    const knob = d.elements.find((e) => e.kind === "knob" && e.param);
+    // 拖"当前选中的那个"（焦点模式下只有焦点图层可拖，最后一个加的正好在焦点里）
+    const knob = d.elements.find((e) => e.id === state.selection[0]);
     const node = document.querySelector(`[data-elid="${knob.id}"]`);
     if (!node) return "no-node";
     const r = node.getBoundingClientRect();
