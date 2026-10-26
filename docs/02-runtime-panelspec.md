@@ -40,12 +40,16 @@ let to_screen = |p| pos2(rect.left() + p.0 * scale, rect.top() + p.1 * scale);
 | 行为 | 规则 |
 |---|---|
 | 值域 | 0..1（归一化）；真实参数范围由 `ParamAccess` 背后的 nih-plug 参数决定 |
-| 角度映射 | `angle = angle_min + value * (angle_max - angle_min)`；**0.5 对正上方** |
-| 拖动 | 竖向拖动，`drag_range` 屏幕像素走完全程；按住 `Shift` 通常是精调（如实现） |
-| 绘制 | 从 `center` 沿角度画一条长 `pointer_len`、宽 `pointer_width` 的线（覆盖在底图上） |
+| 角度映射 | `angle = angle_min + value * (angle_max - angle_min)`；**0.5 对正上方（0°）** |
+| 拖动 | 竖向拖动，`drag_range` 屏幕像素走完全程；双击回 0.5；滚轮微调 |
+| 渲染 A（默认） | **整图旋转**：`KnobSpec.image` 按 `image_size` 贴到 `center`，绕中心转 `angle` |
+| 渲染 B | **指针线**：从 `center` 画长 `pointer_len`、宽 `pointer_width` 的线（颜色固定近白 `0xf5f5f5`，线宽 ≥2px） |
 
-> 结论：**旋钮的"看起来"由底图决定，指针由运行时画**。
-> 设计器要么在底图上留出指针区域（不要把指针画进底图），要么就接受指针被覆盖。
+**约定：素材指针朝上 ⇔ 参数 0.5**（所以 `angle_min + angle_max == 0`）。
+导出前素材必须"指针朝上"；设计器负责把导入的素材旋正。
+
+> 两种渲染的取舍：整图旋转与素材风格一致（扁平风），但**阴影/高光也会跟着转**；
+> 写实素材请用 `pointer` 模式（旋钮本体压平进底图，只有指针转）。
 
 ### 3.2 指示灯 `LedSpec`
 
@@ -57,14 +61,15 @@ let to_screen = |p| pos2(rect.left() + p.0 * scale, rect.top() + p.1 * scale);
 ### 3.3 拨杆 `ToggleSpec`
 
 - 布尔参数 `0` → `image_up`，`1` → `image_down`。
-- 两态**各自的 y**（`y_up`/`y_down`）；高度可以不同，但视觉基线必须一致。
+- 两态**各自的 y**（`y_up`/`y_down`）；**按"六边形中心 = 锚点"归一化后两者相等**。
 - 交互：点击命中矩形（`x..x+width`, `y_*. .+height`）切换；按住时以 `pivot` 为原点缩放到 `press_scale`。
-- ⚠️ legacy 实测：两态贴图的六边形基线差 **1.53（素材坐标）**，用同一个 y 会跳。
+- 交互 id 用 `(kind, index)`，因此**两个拨杆可以绑同一个参数**（联动）。
 
 ### 3.4 按钮 `ButtonSpec`
 
 - 布尔参数；外形不变，只有按下时以 `center` 为原点缩放 `press_scale`。
 - 判定"按住"要用 `Response::is_pointer_button_down_on()`（不是 `clicked()`），否则看着不跟手。
+- 按钮的**美术在底图里**（运行时按 `center±radius` 抠出来缩放），所以多个按钮互不影响。
 
 ---
 
@@ -87,14 +92,19 @@ pub trait ParamAccess {
 
 | 控件 | 数量上限 | 备注 |
 |---|---|---|
-| 旋钮 | **不限**（`&'static [KnobSpec]`） | |
-| 指示灯 | **1 个**（`Option<LedSpec>`） | |
-| 拨杆 | **1 个**（`Option<ToggleSpec>`） | 两态贴图 |
-| 按钮 | **1 个**（`Option<ButtonSpec>`） | |
-| 文字/丝印 | **无**（只能画进底图） | 底图是 PNG，文字不可选中、不可改 |
+| 旋钮 | **不限** | 支持整图旋转（默认）或指针线 |
+| 指示灯 | **不限** | |
+| 拨杆 | **不限** | 每个两张贴图 |
+| 按钮 | **不限** | 美术必须压平进底图 |
+| 文字/丝印 | **无** | 只能画进底图（运行时不渲染文字） |
 
-> 如果面板想要"两个拨杆"或"三个指示灯"，需要**先扩展 `rustomp-gui`**
-> （把 `Option<T>` 改成 `&'static [T]`）。这是设计器规范的第一个待定项，见 `04-open-questions.md`。
+**绘制顺序是固定的**（`rustomp_gui::DRAW_ORDER`）：
+
+```text
+panel.png → leds → knobs → toggles → buttons
+```
+
+跨类型不可重排 —— 例如"LED 压在旋钮上"无法表达；同类内部按数组顺序叠放。
 
 ---
 
