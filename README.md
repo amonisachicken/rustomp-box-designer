@@ -29,6 +29,7 @@
 | 预览 L1（拖旋钮 / 点拨杆 / 按脚踏 / LED 亮灭） | ✅ |
 | 导出：`panel.svg` + `panel.png` + 控件贴图 + `[assets]/[ui]` 标记块 | ✅ |
 | 用设计器复刻真实面板（Sparklin Drive） | ✅ `examples/sparklin.box.json` |
+| **产物已进发布路径**（D0.5） | ✅ rustomp 的 Sparklin Drive：面板/旋钮/拨杆贴图 + `[assets]`+`[ui]` 全部来自设计器，音频 RMS 逐位不变 |
 | 数值/表头显示、素材热重载、1:1 打印 PDF | ⬜ 后续 |
 
 ### 快速开始
@@ -44,9 +45,16 @@
 ### 导出到插件项目
 
 ```bash
+# 1) 出 PNG + SVG（Inkscape 栅格化，12 px/mm）
 node scripts/export.mjs my.box.json --out ../rustomp/plugins/<插件>/assets
-# 逐行打印 ARTIFACT: <路径>，把 ui.toml 里的标记块粘进 rustomp.toml
+# 2) 把 ui.toml 里的 `# >>> rustomp-box-designer` … `# <<<` 块替换掉 rustomp.toml 的同名段
+# 3) 回到 rustomp：重新生成 → 构建
+python3 tools/meta/plugin_meta.py plugins/<插件>/rustomp.toml --panel-rust > plugins/<插件>/plugin/src/generated/panel.rs
+cargo run -q -p rustomp-gen -- plugins/<插件> && ./scripts/build-all.sh
 ```
+
+> 素材名（`knob_round_dark` / `toggle_small_up`…）会直接出现在 rustomp 的
+> `generated/assets.rs` 里，`editor.rs` 不需要跟着改（rustomp DEVLOG E65）。
 
 > **契约验证**：`rustomp` 的 Sparklin Drive v2 已经用这套契约做出了第一个面板
 > （毫米坐标 60×112 mm、12 px/mm、旋钮整图旋转、拨杆两态、LED），
