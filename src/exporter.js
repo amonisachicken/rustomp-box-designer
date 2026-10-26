@@ -132,14 +132,25 @@ function toggleSprite(el, assets, values) {
  * 预览必须复刻这个行为，否则设计器里好看、装进宿主里却不一样。
  */
 function buttonPress(el, assets, bg) {
-  const a = byId(el.asset);
-  const [x, y] = [el.center[0] - a.size_mm[0] / 2, el.center[1] - a.size_mm[1] / 2];
-  const s = el.press_scale;
   const [cx, cy] = el.center;
   const r = el.radius;
+  const erase = `<rect x="${num(cx - r)}" y="${num(cy - r)}" width="${num(r * 2)}" height="${num(r * 2)}" fill="${esc(bg)}"/>`;
+
+  // 有按住态贴图 → 整张换上（与运行时一致，不缩放）
+  if (el.image_hold && assets[el.image_hold]) {
+    const a = byId(el.image_hold);
+    const [w, h] = el.image_size ?? a.size_mm;
+    return (
+      erase +
+      placeAsset({ assetId: el.image_hold, text: assets[el.image_hold], x: cx - w / 2, y: cy - h / 2, w, h })
+    );
+  }
+  // 兜底：把原美术缩小贴回（旧行为）
+  const a = byId(el.asset);
+  const [x, y] = [cx - a.size_mm[0] / 2, cy - a.size_mm[1] / 2];
   return (
-    `<rect x="${num(cx - r)}" y="${num(cy - r)}" width="${num(r * 2)}" height="${num(r * 2)}" fill="${esc(bg)}"/>` +
-    `<g transform="translate(${num(cx)} ${num(cy)}) scale(${num(s)}) translate(${num(-cx)} ${num(-cy)})">` +
+    erase +
+    `<g transform="translate(${num(cx)} ${num(cy)}) scale(${num(el.press_scale)}) translate(${num(-cx)} ${num(-cy)})">` +
     placeAsset({ assetId: el.asset, text: assets[el.asset], x, y }) +
     `</g>`
   );
@@ -154,6 +165,14 @@ export function spritePlan(doc) {
   const knobs = new Map();
   for (const el of doc.elements.filter((e) => e.kind === "knob")) knobs.set(el.asset, el.image_size);
   for (const [asset, size] of knobs) plan.push({ file: `${asset}.png`, mm: size, from: `asset ${asset}` });
+
+  // 按住态贴图（脚踏）
+  const holds = new Set();
+  for (const el of doc.elements.filter((e) => e.kind === "button" && e.image_hold)) holds.add(el.image_hold);
+  for (const asset of holds) {
+    const a = byId(asset);
+    plan.push({ file: `${asset}.png`, mm: a.size_mm, from: `asset ${asset}` });
+  }
 
   const toggles = new Map();
   for (const el of doc.elements.filter((e) => e.kind === "toggle")) {
@@ -232,6 +251,10 @@ export function uiToml(doc) {
     L.push(`center = ${vec(el.center)}`);
     L.push(`radius = ${num(el.radius)}`);
     L.push(`press_scale = ${num(el.press_scale)}`);
+    if (el.image_hold) {
+      L.push(`image_hold = "${esc(el.image_hold)}"`);
+      L.push(`image_size = ${vec(el.image_size)}`);
+    }
   }
 
   L.push("# <<< rustomp-box-designer");

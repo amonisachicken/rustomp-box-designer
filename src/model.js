@@ -43,6 +43,14 @@ export function newDoc({ name = "未命名面板", preset = "1590B", params = []
     },
     params, // 从 rustomp.toml 读来的 [[params]]（D-009），只读
     elements: [],
+    // 视图/图层状态（D1）：不影响导出，只影响编辑
+    view: {
+      safe_margin_mm: 4, // 面板边缘的安全区（丝印/控件别贴边）
+      snap_mm: 0.5, // 拖动吸附步长
+      snap_to_targets: true, // 吸附到画布中线/其它控件的中线
+      show_safe: true,
+    },
+    layers: {}, // { [layerId]: { hidden: false, locked: false } }
     nextId: 1,
   };
 }
@@ -108,16 +116,19 @@ export const factory = {
     };
   },
 
-  /** 脚踏（美术压进底图，运行时抠出缩放） */
-  button(doc, { asset = "3pdt", param = "bypass", center = [30, 85] } = {}) {
+  /** 脚踏（常态美术压进底图；按住态用它自己的贴图） */
+  button(doc, { asset = "3pdt_alt", param = "bypass", center = [30, 85] } = {}) {
     const a = byId(asset);
     return {
       id: uid(doc, "b"),
       kind: "button",
       asset,
+      image_hold: a.hold ?? "",
+      image_size: a.size_mm,
       param,
       center,
-      radius: a.r_outer_mm ?? +(a.size_mm[0] / 2).toFixed(2),
+      // 命中半径必须 ≥ 美术半径（按下时要擦掉这块）
+      radius: +(a.size_mm[0] / 2).toFixed(2),
       press_scale: 0.9,
       pressed: false,
     };
@@ -215,6 +226,9 @@ export function validate(doc) {
       }
     }
     if (el.asset && !byId(el.asset)) problems.push(`${el.id}：素材 "${el.asset}" 不存在`);
+    if (el.kind === "button" && el.image_hold && !byId(el.image_hold)) {
+      problems.push(`${el.id}：按住态素材 "${el.image_hold}" 不存在`);
+    }
     if (el.kind === "toggle") {
       if (!byId(el.image_up) || !byId(el.image_down)) problems.push(`${el.id}：拨杆两态素材缺失`);
       if (el.y_up !== el.y_down) problems.push(`${el.id}：两态 y 不一致（会在切换时跳）`);
@@ -243,3 +257,54 @@ export function load(text) {
 }
 
 export const save = (doc) => JSON.stringify(doc, null, 2) + "\n";
+
+/** 图层是否为隐藏/锁定（缺省 = 可见可编辑） */
+export const layerState = (doc, layer) => doc.layers?.[layer] ?? { hidden: false, locked: false };
+
+/** 元素当前是否可选中/可拖动 */
+export function editable(doc, el) {
+  const st = layerState(doc, layerOf(el));
+  return !st.hidden && !st.locked;
+}
+
+/**
+ * 吸附：给定一个正在拖动的元素的新 bbox，找出最近的吸附目标。
+ *
+ * 目标 = 画布中线/边 + 其它元素的中线/边 + 安全边距线。
+ * 返回 { dx, dy, guides: [{axis, at}] }（dx/dy 是要额外补的位移）。
+ */
+export function snapTargets(doc, el, threshold = 1.2) {
+  const b = bbox(el);
+  const [W, H] = doc.canvas.canvas_mm;
+  const m = doc.view?.safe_margin_mm ?? 0;
+  const xs = [0, W / 2, W, m, W - m];
+  const ys = [0, H / 2, H, m, H - m];
+  for (const o of doc.elements) {
+    if (o.id === el.id) continue;
+    const ob = bbox(o);
+    xs.push(ob.x, ob.x + ob.w / 2, ob.x + ob.w);
+    ys.push(ob.y, ob.y + ob.h / 2, ob.y + ob.h);
+  }
+  const candX = [b.x, b.x + b.w / 2, b.x + b.w];
+  const candY = [b.y, b.y + b.h / 2, b.y + b.h];
+
+  let best = { dx: 0, dy: 0, dist: threshold, guides: [] };
+  for (const cx of candX) {
+    for (const tx of xs) {
+      const d = Math.abs(tx - cx);
+      if (d < best.dist) best = { dx: tx - cx, dy: 0, dist: d, guides: [{ axis: "x", at: tx }] };
+    }
+  }
+  let bestY = { dy: 0, dist: threshold, guides: [] };
+  for (const cy of candY) {
+    for (const ty of ys) {
+      const d = Math.abs(ty - cy);
+      if (d < bestY.dist) bestY = { dy: ty - cy, dist: d, guides: [{ axis: "y", at: ty }] };
+    }
+  }
+  return {
+    dx: best.dx,
+    dy: bestY.dy,
+    guides: [...best.guides, ...bestY.guides],
+  };
+}

@@ -128,15 +128,20 @@
     {
       "id": "b1",
       "kind": "button",
-      "asset": "3pdt",
+      "asset": "3pdt_alt",
       "param": "bypass",
       "center": [
         30.1,
         83.3
       ],
-      "radius": 5.4,
+      "radius": 7.2,
       "press_scale": 0.9,
-      "pressed": false
+      "pressed": false,
+      "image_hold": "3pdt_alt_hold",
+      "image_size": [
+        14.35,
+        14.35
+      ]
     },
     {
       "id": "k1",
@@ -193,5 +198,12 @@
       "state": false
     }
   ],
-  "nextId": 20
+  "nextId": 20,
+  "view": {
+    "safe_margin_mm": 4,
+    "snap_mm": 0.5,
+    "snap_to_targets": true,
+    "show_safe": true
+  },
+  "layers": {}
 }

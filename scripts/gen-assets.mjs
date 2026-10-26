@@ -55,8 +55,10 @@ for (const file of walk(join(ROOT, "assets"))) {
   const kind = KINDS[dir];
   if (!kind) throw new Error(`未知素材目录：${rel}`);
   const info = inspect(readFileSync(file, "utf8"));
+  // 文件名里的 `-` 不是合法 Rust 标识/贴图名习惯 → 统一成 `_`
+  const norm = base.replace(/[^A-Za-z0-9_]/g, "_");
   items.push({
-    id: kind === "label" ? `label_${base}` : base,
+    id: kind === "label" ? `label_${norm}` : norm,
     kind,
     file: `assets/${rel}`,
     size_mm: [info.w_mm, info.h_mm],
@@ -74,10 +76,28 @@ for (const it of items) {
   if (m) (pairs[m[1]] ??= {})[m[2]] = it.id;
 }
 
+// 「按住态」配对：xxx_hold.svg 是 xxx.svg 的按下态（同一画布尺寸）
+const holds = {};
+for (const it of items) {
+  const m = /^(.*)_hold$/.exec(it.id);
+  if (m && items.some((a) => a.id === m[1])) holds[m[1]] = it.id;
+}
+for (const [base, hold] of Object.entries(holds)) {
+  const a = items.find((x) => x.id === base);
+  if (Math.abs(a.size_mm[0] - items.find((x) => x.id === hold).size_mm[0]) > 0.01) {
+    console.warn(`  ! ${hold} 与 ${base} 尺寸不一致，按住时会跳`);
+  }
+  a.hold = hold;
+}
+
+/** 脚踏 = 不带 _up/_down/_hold 后缀的开关素材 */
+const FOOTSWITCHES = items.filter((a) => a.kind === "switch" && !/_(up|down|hold)$/.test(a.id)).map((a) => a.id);
+
 const body = `// 由 scripts/gen-assets.mjs 生成，请勿手改。
 export const PT_TO_MM = ${PT_TO_MM};
 export const ASSETS = ${JSON.stringify(items, null, 2)};
 export const SWITCH_PAIRS = ${JSON.stringify(pairs, null, 2)};
+export const FOOTSWITCHES = ${JSON.stringify(FOOTSWITCHES, null, 2)};
 export const byId = (id) => ASSETS.find((a) => a.id === id);
 export const byKind = (kind) => ASSETS.filter((a) => a.kind === kind);
 `;

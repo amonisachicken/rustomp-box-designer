@@ -1,6 +1,22 @@
 // 设计器主程序：素材库 → 画布（SVG 预览 = 导出同一份代码）→ 属性面板 → 导出
-import { ASSETS, SWITCH_PAIRS, byId, byKind } from "./assets.gen.js";
-import { newDoc, factory, validate, move, resize, snap, bbox, layerOf, load, save, PRESETS } from "./model.js";
+import { ASSETS, SWITCH_PAIRS, FOOTSWITCHES, byId, byKind } from "./assets.gen.js";
+import {
+  newDoc,
+  factory,
+  validate,
+  move,
+  resize,
+  snap,
+  bbox,
+  layerOf,
+  load,
+  save,
+  PRESETS,
+  LAYERS,
+  layerState,
+  editable,
+  snapTargets,
+} from "./model.js";
 import { panelSvg, uiToml, parseParams, num } from "./exporter.js";
 
 const $ = (s) => document.querySelector(s);
@@ -10,6 +26,9 @@ const state = {
   selected: null, // 元素 id
   mode: "edit",
   values: {}, // 预览态：元素 id → 数值/布尔
+  guides: [], // 拖动时命中的吸附线（只画不导）
+  past: [], // 撤销栈（文档快照）
+  future: [], // 重做栈
 };
 
 // ---------- 素材预载（预览要按需内联素材 SVG，必须离线也有文本） ----------
@@ -35,14 +54,16 @@ function render() {
   stage.style.height = `${Math.round(H * scale)}px`;
 
   // 编辑时也要画旋钮/拨杆（否则看不见自己在拖什么）；导出底图时才排除它们
-  const svg = panelSvg(state.doc, state.assets, {
+  const doc = visibleDoc();
+  const svg = panelSvg(doc, state.assets, {
     controls: true,
     values: state.mode === "preview" ? state.values : {},
   });
-  stage.innerHTML = svg + (state.selected ? selectionOverlay() : "") + gridOverlay();
+  stage.innerHTML = svg + (state.selected ? selectionOverlay() : "") + overlay();
   $("#stage svg").setAttribute("preserveAspectRatio", "xMidYMid meet");
 
   $("#stCount").textContent = state.doc.elements.length;
+  if (document.getElementById("layerList")) renderLayers();
   $("#stCanvas").textContent = `${W} × ${H} mm`;
   $("#stDensity").textContent = `${state.doc.canvas.px_per_mm} px/mm`;
   $("#docName").value = state.doc.name;
@@ -55,12 +76,65 @@ function selectionOverlay() {
   return `<rect class="sel" x="${num(b.x - 1)}" y="${num(b.y - 1)}" width="${num(b.w + 2)}" height="${num(b.h + 2)}" rx="1.5"/>`;
 }
 
-function gridOverlay() {
+/** 只保留"没被隐藏"的元素给渲染用（导出不走这里，导出是另一条路径） */
+function visibleDoc() {
+  const hidden = (el) => layerState(state.doc, layerOf(el)).hidden;
+  return { ...state.doc, elements: state.doc.elements.filter((el) => !hidden(el)) };
+}
+
+function overlay() {
   const [W, H] = state.doc.canvas.canvas_mm;
-  const lines = [];
-  for (let x = 0; x <= W; x += 5) lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${H}"/>`);
-  for (let y = 0; y <= H; y += 5) lines.push(`<line x1="0" y1="${y}" x2="${W}" y2="${y}"/>`);
-  return `<g class="grid" pointer-events="none">${lines.join("")}</g>`;
+  const g = [];
+  // 5 mm 网格
+  for (let x = 0; x <= W; x += 5) g.push(`<line x1="${x}" y1="0" x2="${x}" y2="${H}"/>`);
+  for (let y = 0; y <= H; y += 5) g.push(`<line x1="0" y1="${y}" x2="${W}" y2="${y}"/>`);
+  const out = [`<g class="grid" pointer-events="none">${g.join("")}</g>`];
+
+  // 安全边距
+  const v = state.doc.view ?? {};
+  const m = v.safe_margin_mm ?? 4;
+  if (v.show_safe !== false) {
+    out.push(
+      `<rect class="safe" pointer-events="none" x="${m}" y="${m}" width="${W - m * 2}" height="${H - m * 2}" rx="1.5"/>`,
+    );
+  }
+  // 吸附线
+  for (const gd of state.guides) {
+    out.push(
+      gd.axis === "x"
+        ? `<line class="guide" pointer-events="none" x1="${gd.at}" y1="0" x2="${gd.at}" y2="${H}"/>`
+        : `<line class="guide" pointer-events="none" x1="0" y1="${gd.at}" x2="${W}" y2="${gd.at}"/>`,
+    );
+  }
+  return out.join("");
+}
+
+// ---------- 撤销 / 重做 ----------
+const HISTORY_MAX = 60;
+
+/** 在改动**之前**调用：把当前文档压进撤销栈 */
+function commit() {
+  state.past.push(JSON.stringify(state.doc));
+  if (state.past.length > HISTORY_MAX) state.past.shift();
+  state.future.length = 0;
+}
+
+function undo() {
+  if (!state.past.length) return;
+  state.future.push(JSON.stringify(state.doc));
+  state.doc = load(state.past.pop());
+  state.selected = null;
+  render();
+  renderInspector();
+}
+
+function redo() {
+  if (!state.future.length) return;
+  state.past.push(JSON.stringify(state.doc));
+  state.doc = load(state.future.pop());
+  state.selected = null;
+  render();
+  renderInspector();
 }
 
 // ---------- 素材库 ----------
@@ -71,7 +145,7 @@ function renderLibrary() {
     knob: byKind("knob"),
     toggle: Object.keys(SWITCH_PAIRS),
     led: byKind("led"),
-    button: ["3pdt", "3pdt_alt"],
+    button: FOOTSWITCHES,
     label: byKind("label"),
   };
   const html = Object.entries(groups)
@@ -89,13 +163,42 @@ function renderLibrary() {
       return `<h3>${KIND_TITLE[kind]}</h3><div class="asset-grid">${cells}</div>`;
     })
     .join("");
-  $("#lib").innerHTML = html;
+  $("#assetList").innerHTML = html;
 }
 
-$("#lib").addEventListener("click", (e) => {
+$("#assetList").addEventListener("click", (e) => {
   const cell = e.target.closest("[data-add]");
   if (!cell) return;
   addElement(cell.dataset.add, cell.dataset.id);
+});
+
+// ---------- 图层：显隐 / 锁定 ----------
+function renderLayers() {
+  const rows = LAYERS.map((l) => {
+    const st = layerState(state.doc, l.id);
+    const n = state.doc.elements.filter((e) => layerOf(e) === l.id).length;
+    return `<div class="layer ${st.hidden ? "off" : ""}" data-layer="${l.id}">
+      <button data-act="hidden" class="${st.hidden ? "" : "on"}" title="显示/隐藏">${st.hidden ? "○" : "●"}</button>
+      <button data-act="locked" class="${st.locked ? "on" : ""}" title="锁定/解锁">${st.locked ? "🔒" : "🔓"}</button>
+      <span class="name">${l.name}</span><span style="opacity:.5">${n || ""}</span>
+    </div>`;
+  }).join("");
+  $("#layerList").innerHTML = rows;
+}
+
+$("#layerList").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-act]");
+  const row = e.target.closest("[data-layer]");
+  if (!row) return;
+  const id = row.dataset.layer;
+  const st = { ...layerState(state.doc, id) };
+  if (btn?.dataset.act === "hidden") st.hidden = !st.hidden;
+  else if (btn?.dataset.act === "locked") st.locked = !st.locked;
+  else return;
+  commit();
+  state.doc.layers = { ...(state.doc.layers ?? {}), [id]: st };
+  render();
+  renderLayers();
 });
 
 /** 新元素放在画布中央（毫米），避免一加就超出边界 */
@@ -111,6 +214,7 @@ function addElement(kind, id) {
   else if (kind === "led") el = factory.led(d, { asset: id, center: [cx, cy] });
   else if (kind === "button") el = factory.button(d, { asset: id, param: firstParam, center: [cx, cy] });
   else el = factory.image(d, { asset: id, x: cx, y: cy });
+  commit();
   d.elements.push(el);
   state.selected = el.id;
   render();
@@ -162,13 +266,13 @@ $("#stage").addEventListener("pointerdown", (ev) => {
   }
 
   // 编辑模式：选中 + 开始拖动
-  state.selected = id ?? null;
+  state.selected = id && el && editable(state.doc, el) ? id : null;
   renderInspector();
-  if (!el) {
+  if (!state.selected) {
     render();
     return;
   }
-  drag = { kind: "move", id, last: [mx, my], moved: false };
+  drag = { kind: "move", id: state.selected, last: [mx, my], moved: false, committed: false };
   ev.preventDefault();
 });
 
@@ -186,10 +290,23 @@ $("#stage").addEventListener("pointermove", (ev) => {
 
   const el = state.doc.elements.find((e) => e.id === drag.id);
   if (!el) return;
-  const step = ev.altKey ? 0.01 : 0.5; // Alt 关闭吸附
+  const step = ev.altKey ? 0.01 : (state.doc.view?.snap_mm ?? 0.5); // Alt 关吸附
   const [dx, dy] = [snap(mx, step) - snap(drag.last[0], step), snap(my, step) - snap(drag.last[1], step)];
   if (dx || dy) {
+    if (!drag.committed) {
+      commit(); // 一次拖动只记一步撤销
+      drag.committed = true;
+    }
     move(el, dx, dy);
+
+    // 吸附到中线/边/其它控件（Alt 关闭）
+    state.guides = [];
+    if (!ev.altKey && state.doc.view?.snap_to_targets !== false) {
+      const t = snapTargets(state.doc, el);
+      if (t.dx || t.dy) move(el, t.dx, t.dy);
+      state.guides = t.guides;
+    }
+
     drag.last = [snap(mx, step), snap(my, step)];
     drag.moved = true;
     render();
@@ -198,6 +315,7 @@ $("#stage").addEventListener("pointermove", (ev) => {
 });
 
 window.addEventListener("pointerup", () => {
+  if (drag) state.guides = [];
   drag = null;
 });
 
@@ -206,12 +324,14 @@ window.addEventListener("keydown", (ev) => {
   const el = state.doc.elements.find((e) => e.id === state.selected);
   const step = ev.shiftKey ? 1 : 0.1;
   const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[ev.key];
-  if (nudge && el) {
+  if (nudge && el && editable(state.doc, el)) {
+    commit();
     move(el, ...nudge);
     render();
     renderInspector();
     ev.preventDefault();
-  } else if ((ev.key === "Delete" || ev.key === "Backspace") && el) {
+  } else if ((ev.key === "Delete" || ev.key === "Backspace") && el && editable(state.doc, el)) {
+    commit();
     state.doc.elements = state.doc.elements.filter((e) => e.id !== el.id);
     state.selected = null;
     render();
@@ -219,6 +339,12 @@ window.addEventListener("keydown", (ev) => {
     ev.preventDefault();
   } else if (ev.key === "Tab") {
     setMode(state.mode === "edit" ? "preview" : "edit");
+    ev.preventDefault();
+  } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") {
+    ev.shiftKey ? redo() : undo();
+    ev.preventDefault();
+  } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "y") {
+    redo();
     ev.preventDefault();
   }
 });
@@ -304,12 +430,14 @@ function renderInspector() {
   // ---- 事件 ----
   $("#insp").addEventListener("input", onInspectorInput, { once: true });
   $("#btnDel")?.addEventListener("click", () => {
+    commit();
     d.elements = d.elements.filter((e) => e.id !== el.id);
     state.selected = null;
     render();
     renderInspector();
   });
   $("#btnDup")?.addEventListener("click", () => {
+    commit();
     const copy = JSON.parse(JSON.stringify(el));
     copy.id = `${el.kind[0]}${d.nextId++}`;
     move(copy, 3, 3);
@@ -323,6 +451,7 @@ function renderInspector() {
 function onInspectorInput(ev) {
   const t = ev.target;
   const d = state.doc;
+  commit();
   const el = d.elements.find((e) => e.id === state.selected);
 
   if (t.dataset.canvas !== undefined) {
@@ -383,7 +512,11 @@ $("#docName").addEventListener("input", (e) => {
   state.doc.name = e.target.value;
 });
 
+$("#btnUndo").addEventListener("click", undo);
+$("#btnRedo").addEventListener("click", redo);
+
 $("#btnNew").addEventListener("click", () => {
+  commit();
   state.doc = newDoc({ name: "未命名面板", params: state.doc.params });
   state.selected = null;
   state.values = {};
@@ -402,6 +535,7 @@ $("#fileInput").addEventListener("change", async (e) => {
       state.doc.params = parseParams(text);
       $("#stHint").textContent = `已读入 ${state.doc.params.length} 个参数`;
     } else {
+      commit();
       state.doc = load(text);
       state.selected = null;
     }
@@ -444,6 +578,7 @@ $("#expClose").addEventListener("click", () => $("#dlgExport").close());
 // ---------- 启动 ----------
 await loadAssets();
 renderLibrary();
+renderLayers();
 render();
 renderInspector();
 setMode("edit");

@@ -1,6 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newDoc, factory, validate, move, resize, snap, load, save, bbox, layerOf } from "../src/model.js";
+import {
+  newDoc,
+  factory,
+  validate,
+  move,
+  resize,
+  snap,
+  load,
+  save,
+  bbox,
+  layerOf,
+  layerState,
+  editable,
+  snapTargets,
+} from "../src/model.js";
 
 const doc = () => newDoc({ params: [{ id: "gain" }, { id: "bypass" }] });
 
@@ -32,10 +46,11 @@ test("LED 半径 = 素材内圈（镜片），底座外圈留在底图里", () =
   assert.equal(l.param, "clip_indicator"); // 虚拟指示，不需要在 params 里
 });
 
-test("脚踏半径 = 3PDT 外圈", () => {
+test("脚踏：半径盖住美术（按下要擦掉这块），且带按住态", () => {
   const d = doc();
   const b = factory.button(d);
-  assert.ok(b.radius > 5 && b.radius < 5.5, `实际 ${b.radius}`);
+  assert.ok(b.radius >= 7.0, `实际 ${b.radius}`);
+  assert.equal(b.image_hold, "3pdt_alt_hold");
 });
 
 test("校验：绑定了不存在的参数要报错", () => {
@@ -105,4 +120,38 @@ test("save/load 往返一致", () => {
 
 test("load 拒绝未知版本", () => {
   assert.throws(() => load('{"version":99}'), /版本/);
+});
+
+test("图层默认可见可编辑；隐藏/锁定后不可编辑", () => {
+  const d = doc();
+  const k = factory.knob(d, { param: "gain" });
+  d.elements.push(k);
+  assert.equal(editable(d, k), true);
+  d.layers = { knobs: { hidden: true, locked: false } };
+  assert.equal(editable(d, k), false);
+  d.layers = { knobs: { hidden: false, locked: true } };
+  assert.equal(layerState(d, "knobs").locked, true);
+  assert.equal(editable(d, k), false);
+});
+
+test("吸附：旋钮拖到画布中线附近会被吸到正中", () => {
+  const d = doc();
+  d.canvas.canvas_mm = [60, 112];
+  const k = factory.knob(d, { param: "gain", center: [30.4, 30] });
+  d.elements.push(k);
+  const t = snapTargets(d, k, 1.2);
+  assert.ok(Math.abs(t.dx) > 0, "应当给出横向修正量");
+  move(k, t.dx, 0);
+  assert.equal(k.center[0], 30); // 面板中线
+  assert.ok(t.guides.some((g) => g.axis === "x"));
+});
+
+test("吸附：也会对齐到其它控件的中线", () => {
+  const d = doc();
+  const a = factory.knob(d, { param: "gain", center: [20, 20] });
+  const b = factory.knob(d, { param: "gain", center: [20.3, 40] });
+  d.elements.push(a, b);
+  const t = snapTargets(d, b, 1.2);
+  move(b, t.dx, t.dy);
+  assert.equal(b.center[0], 20);
 });

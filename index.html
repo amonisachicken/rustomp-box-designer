@@ -2,6 +2,8 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
+    <!-- 本地开发不留缓存：改了 src/*.js 刷新即生效（python http.server 不发 cache 头） -->
+    <meta http-equiv="cache-control" content="no-store" />
     <title>rustomp-box-designer</title>
     <style>
       :root {
@@ -43,7 +45,22 @@
       #mode button:last-child { border-radius: 0 4px 4px 0; }
       #mode button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-      #lib { grid-area: lib; overflow: auto; background: #f6efe2; border-right: 1px solid var(--line); padding: 8px; }
+      #lib {
+        grid-area: lib; display: flex; flex-direction: column; overflow: hidden;
+        background: #f6efe2; border-right: 1px solid var(--line); padding: 8px;
+      }
+      /* 素材多的时候让素材区自己滚，图层列表钉在底部（否则图层会被 32 个素材挤下去） */
+      #assetList { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+      #layerList { flex: 0 0 auto; border-top: 1px solid var(--line); padding-top: 4px; }
+      .layer {
+        display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 4px;
+        font-size: 12px; color: #4a423b;
+      }
+      .layer:hover { background: #fffdf8; }
+      .layer .name { flex: 1; }
+      .layer button { padding: 0 4px; border: none; background: none; font-size: 13px; opacity: 0.55; }
+      .layer button.on { opacity: 1; }
+      .layer.off .name { opacity: 0.4; text-decoration: line-through; }
       #lib h3 { margin: 12px 0 6px; font-size: 11px; letter-spacing: 0.08em; color: #7a6f63; text-transform: uppercase; }
       #lib h3:first-child { margin-top: 0; }
       .asset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -63,6 +80,8 @@
       #stage svg { display: block; width: 100%; height: 100%; }
       #stage .sel { fill: none; stroke: var(--accent); stroke-width: 0.35; stroke-dasharray: 1.2 0.8; }
       #stage .grid line { stroke: #3a3a3a; stroke-width: 0.06; opacity: 0.16; }
+      #stage .safe { fill: none; stroke: #b4531c; stroke-width: 0.18; stroke-dasharray: 1.6 1.2; opacity: 0.55; }
+      #stage .guide { stroke: #1f7ac0; stroke-width: 0.12; opacity: 0.8; }
       .drag { cursor: move; }
       body.preview #stage .drag { cursor: default; }
 
@@ -95,13 +114,19 @@
         <button data-mode="preview" title="拖旋钮 / 点拨杆 / 按脚踏">预览</button>
       </div>
       <span class="spacer"></span>
+      <button id="btnUndo" title="撤销（⌘Z）">↶</button>
+      <button id="btnRedo" title="重做（⇧⌘Z）">↷</button>
       <button id="btnNew" title="新建空白面板">新建</button>
       <button id="btnOpen" title="打开 .box.json（或 rustomp.toml 读参数）">打开</button>
       <button id="btnSave" title="下载 .box.json">保存</button>
       <button id="btnExport" class="primary" title="导出 ui.toml / panel.svg；PNG 由 CLI 栅格化">导出</button>
     </div>
 
-    <aside id="lib"></aside>
+    <aside id="lib">
+      <div id="assetList"></div>
+      <h3>图层</h3>
+      <div id="layerList"></div>
+    </aside>
     <main id="canvasWrap"><div id="stage"></div></main>
     <aside id="insp"></aside>
     <div id="status">

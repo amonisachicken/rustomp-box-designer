@@ -71,10 +71,16 @@ test("旋钮角度 = (value-0.5) × travel（指针朝上 ⇔ 0.5）", () => {
   assert.match(svg, new RegExp(`rotate\\(135 ${k.center[0]} ${k.center[1]}\\)`));
 });
 
-test("spritePlan：面板 + 去重后的旋钮/拨杆贴图", () => {
+test("spritePlan：面板 + 去重后的旋钮/拨杆/按住态贴图", () => {
   const d = demo();
   const plan = spritePlan(d).map((p) => p.file);
-  assert.deepEqual(plan, ["panel.png", "knob_round_dark.png", "toggle_small_up.png", "toggle_small_down.png"]);
+  assert.deepEqual(plan, [
+    "panel.png",
+    "knob_round_dark.png",
+    "3pdt_alt_hold.png", // 脚踏的按住态
+    "toggle_small_up.png",
+    "toggle_small_down.png",
+  ]);
 });
 
 test("ui.toml：四类控件字段齐全且顺序稳定（幂等）", () => {

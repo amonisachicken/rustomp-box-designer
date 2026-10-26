@@ -314,18 +314,6 @@ export const ASSETS = [
     "cx_pt": 8.88
   },
   {
-    "id": "3pdt",
-    "kind": "switch",
-    "file": "assets/sw/3pdt.svg",
-    "size_mm": [
-      10.7632,
-      10.7632
-    ],
-    "r_outer_mm": 5.2493,
-    "r_inner_mm": 2.9986,
-    "cx_pt": 15.26
-  },
-  {
     "id": "3pdt_alt",
     "kind": "switch",
     "file": "assets/sw/3pdt_alt.svg",
@@ -335,6 +323,19 @@ export const ASSETS = [
     ],
     "r_outer_mm": 6.9991,
     "r_inner_mm": 4.0005,
+    "cx_pt": 20.34,
+    "hold": "3pdt_alt_hold"
+  },
+  {
+    "id": "3pdt_alt_hold",
+    "kind": "switch",
+    "file": "assets/sw/3pdt_alt_hold.svg",
+    "size_mm": [
+      14.351,
+      14.351
+    ],
+    "r_outer_mm": 6.9991,
+    "r_inner_mm": 3.4996,
     "cx_pt": 20.34
   },
   {
@@ -396,5 +397,8 @@ export const SWITCH_PAIRS = {
     "up": "toggle_small_up"
   }
 };
+export const FOOTSWITCHES = [
+  "3pdt_alt"
+];
 export const byId = (id) => ASSETS.find((a) => a.id === id);
 export const byKind = (kind) => ASSETS.filter((a) => a.kind === kind);

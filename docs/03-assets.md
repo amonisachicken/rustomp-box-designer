@@ -143,7 +143,7 @@ let want = [rect.width() * ppp, rect.height() * ppp];
 | 目录 | 内容 | 尺寸（mm） |
 |---|---|---|
 | `knobs/` | `knob_round_dark`（15.0 / 用这个）、`knob_round_light`（20.35）、`knob_heptagon_large_dark`（27.0） | 指针朝上，运行时整图旋转 |
-| `sw/` | `toggle_small_{up,down}`（8.35×8.89）、`toggle_large_{up,down}`（14.35×15.30）、`3pdt`（10.76）、`3pdt_alt`（14.35） | 拨杆两态各自一张 |
+| `sw/` | `toggle_small_{up,down}`（8.35×8.89）、`toggle_large_{up,down}`（14.35×15.30）、`3pdt_alt`（14.35）+ **`3pdt_alt_hold`（按住态，同尺寸）** | 拨杆两态各自一张；脚踏有按住态就整张换 |
 | `leds/` | `led_{red,green,blue}` | 6.27；外圈 r=3.0，**镜片 r=2.249**（运行时画这个半径） |
 | `labels/` | 23 个单词丝印（attack/bias/boost/clip/comp/depth/dist/drive/fuzz/gain/input/level/mix/output/range/rate/release/sustain/tone/volume…） | 高 2.37，宽随字；**全部是矢量 path，不是文字** |
 
@@ -158,3 +158,13 @@ let want = [rect.width() * ppp, rect.height() * ppp];
 | 每个素材都叫 `.cls-1` / `.cls-2` | 内联多份时后一个把前一个的颜色覆盖掉 | 把 `<style>` 规则**展开成内联 `style`**，删掉 `<defs><style>` |
 | 自闭合标签（`<circle/>`）的样式加在 `/` 之后 | 样式被丢弃 → 圆变成黑色实心块 | 先剥掉尾部的 `/`，加完属性再补回去（`tests/embed.test.mjs` 有回归） |
 | `id="layer1"` / `id="svg1"` 重名 | 引用错乱 | 内联时删掉所有 `id` / `data-name` |
+
+## 8. 按住态（hold）约定
+
+`<id>_hold.svg` 会被自动识别为 `<id>` 的按下态（`scripts/gen-assets.mjs` 配对）：
+
+- **画布尺寸必须与常态一致**（不一致会在生成清单时告警，按住时会跳）；
+- 因为它整张替换，所以"按下"的效果要画在素材里（内圈缩小/阴影等），而不是靠缩放；
+- 导出时它会作为独立 PNG 出现在 `[assets]` 里，`[[ui.buttons]]` 带 `image_hold` + `image_size`。
+
+> 命名里的 `-` 会被规范成 `_`（`3pdt_alt-hold.svg` → `3pdt_alt_hold`）。

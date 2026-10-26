@@ -46,6 +46,7 @@ function readAssets() {
   const need = new Set();
   for (const el of doc.elements) {
     if (el.asset) need.add(el.asset);
+    if (el.image_hold) need.add(el.image_hold);
     if (el.kind === "toggle") {
       need.add(el.image_up);
       need.add(el.image_down);
