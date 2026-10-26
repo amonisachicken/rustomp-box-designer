@@ -319,3 +319,43 @@ ALLOWED_PARAM_KIND = { knob: "float", toggle: "bool", button: "bool", led: "indi
 
 理由：**「指针朝上 ⇔ 参数 0.5」这个契约本身就要求对称行程**（`angle_min + angle_max == 0`），
 可调等于给用户一个能把契约弄坏的旋钮。要改行程就是改框架契约，不是改某个面板。
+
+---
+
+## D-016 浏览器 zip 与 CLI 的分工 / 导入素材必须两条路都支持（2026-10-27）
+
+第一次拿**真实下载件**走完整安装（用户自绘：Sparklin Drive 手写 logo、HONEYPIE EFFECTS 字标、两个三角）。
+过程中发现一个真 bug 并修掉：
+
+### 16.1 CLI 侧不认 `imported[]`（已修）
+
+`scripts/export.mjs` / `preview.mjs` 之前只从 `assets.gen.js` 加载内置素材，
+遇到设计稿里的外部导入（`box.json.imported[]`）就崩：`素材缺少 viewBox` / `素材文件读不到：imp_*`。
+
+修法：
+
+- `export.mjs`：`readAssets()` 只负责内置素材，"缺件"判断要**排除 imported 的 id**，
+  最后统一走 `mergedAssets(doc, builtin)`；
+- `preview.mjs`：同样用 `mergedAssets()`。
+
+### 16.2 浏览器 PNG 与 Inkscape PNG 的关系（明确下来）
+
+| | 生成方式 | 用途 |
+|---|---|---|
+| 浏览器 zip 里的 PNG | canvas `drawImage` | 交付给人用（下载即用） |
+| CLI 的 PNG | Inkscape | **权威产物**，CI / 逐字节可复现 |
+
+两者**像素尺寸完全一致**（mm × 12），但**字节不同**（抗锯齿实现不同）。
+所以：不要拿浏览器产物做逐字节对比；要可复现就走 CLI。
+
+### 16.3 一次"美术改动"的交接长什么样
+
+用户这次只改了美术（加了 3 个导入素材、删了 CLIP 标签、移动了标签位置），没动控件，于是：
+
+```text
+panel.png   变了（底图含新 logo）
+[ui]        完全没变  →  rustomp-gen 报告 "已写入 0 个文件（7 个未变）"
+```
+
+这条经验值得记住：**美术改动只动 `panel.png`，控件改动只动 `[ui]`** —— 两者互不牵连，
+所以"重新导出一次"不会顺手把别人的布局改动踩掉。

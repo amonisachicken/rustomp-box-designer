@@ -10,7 +10,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve, basename } from "node:path";
-import { load, validate } from "../src/model.js";
+import { load, validate, mergedAssets } from "../src/model.js";
 import { panelSvg, spritePlan, uiToml, num } from "../src/exporter.js";
 import { flatten } from "../src/embed.js";
 
@@ -58,12 +58,13 @@ function readAssets() {
   for (const [, id, , file] of entries) {
     if (need.has(id)) map[id] = readFileSync(join(ROOT, file), "utf8");
   }
-  const missing = [...need].filter((id) => !map[id]);
+  const imported = new Set((doc.imported ?? []).map((a) => a.id));
+  const missing = [...need].filter((id) => !map[id] && !imported.has(id));
   if (missing.length) throw new Error(`素材文件读不到：${missing.join(", ")}`);
   return map;
 }
 
-const assets = readAssets();
+const assets = mergedAssets(doc, readAssets());
 mkdirSync(outDir, { recursive: true });
 
 // 1) 面板 SVG（不含旋钮/拨杆贴图：那些是运行时画的）

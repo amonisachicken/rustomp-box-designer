@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
-import { load } from "../src/model.js";
+import { load, mergedAssets } from "../src/model.js";
 import { panelSvg } from "../src/exporter.js";
 
 const args = process.argv.slice(2);
@@ -38,7 +38,8 @@ for (const [, id, , file] of manifest.matchAll(/"id": "([^"]+)",\s*"kind": "([^"
 }
 
 const bypassed = args.includes("--bypass");
-const svg = panelSvg(doc, assets, { controls: true, values, bypassed });
+// 设计稿里的外部导入素材存在 box.json 的 imported[] 里，必须合并进去
+const svg = panelSvg(doc, mergedAssets(doc, assets), { controls: true, values, bypassed });
 const svgPath = out.replace(/\.png$/, ".svg");
 writeFileSync(svgPath, svg);
 const width = Math.round(doc.canvas.canvas_mm[0] * doc.canvas.px_per_mm);

@@ -155,6 +155,7 @@ cargo test -p <插件> --features gui --release     # validate_panel：参数/�
 | 旋钮点击区偏了 | 手改了 `[ui]` 里的 `radius` | 别手改：命中半径由设计器按素材算出 |
 | 拨杆切换时图形跳 | 手写了 `y_up == y_down` | 两态 y 差是**补偿值**，不要"对齐"成同一个数 |
 | 界面不出现 | `build.gui = false` 或没有 `[ui]` | `[build] gui = true` |
+| 设计稿里有**导入的 SVG**，CLI 报 `素材缺少 viewBox` | 旧版 CLI 不认 `box.json.imported[]` | 已修（DEVLOG E68 / D-016）；或直接用浏览器素材包 |
 | 拖了旋钮没反应 | 参数 id 绑错类型（旋钮绑了 bool） | 设计器的校验会报「只能绑 float 类型参数」 |
 
 ---
