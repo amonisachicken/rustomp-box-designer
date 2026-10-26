@@ -7,20 +7,32 @@
 
 ## 0. 你会拿到什么
 
-导出弹窗里有两个按钮：
+### 推荐：一键「下载素材包（zip）」
+
+一次拿到 **11 个文件**，全部就位、不必再手工栅格化：
+
+```text
+panel.svg   panel.png
+knob_round_dark.png   toggle_small_up.png   toggle_small_down.png   3pdt_alt_hold.png
+ui.toml   panel.box.json
+```
+
+把 PNG 放进 `assets/`、把 `ui.toml` 的块贴进 `rustomp.toml`，然后直接跳到第 4 步。
+
+> PNG 由**浏览器 canvas** 栅格化（12 px/mm）；想要 Inkscape 出的"权威"版本就跑第 2、3 步的 CLI。
+> 两者像素尺寸完全一致，只有抗锯齿的极小差异。
+
+### 或者：单件导出
+
+导出弹窗里还有两个单件按钮：
 
 | 文件 | 内容 | 说明 |
 |---|---|---|
 | `ui.toml` | `# >>> rustomp-box-designer` … `# <<<` 标记块 | 里面是 `[assets]` + `[ui]` 两段，**直接整段替换**进插件的 `rustomp.toml` |
 | `panel.svg` | 底图（背景+装饰+丝印+LED 底座+脚踏美术） | 自包含、mm 单位，可直接 1:1 打印，也可以栅格化成 PNG |
 
-**没有下载到的**（设计器只管矢量和布局）：
-
-- `panel.png`（= `panel.svg` × 12 px/mm）
-- 控件贴图：`knob_round_dark.png`、`toggle_small_up/down.png`、`3pdt_alt_hold.png`
-
-这些要么由 `scripts/export.mjs` 一次生成，要么手工栅格化（见第 3 步）。
-`ui.toml` 的 `[assets]` 段会**点名**它们，缺文件时 `rustomp-gen` 会在生成阶段就报错。
+**单件模式没给你的**：`panel.png` 与控件贴图。它们由第 2、3 步生成
+（`ui.toml` 的 `[assets]` 会点名它们，缺文件时 `rustomp-gen` 在生成阶段就报错）。
 
 ---
 

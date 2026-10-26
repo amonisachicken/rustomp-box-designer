@@ -32,6 +32,8 @@ import {
   buttonRadius,
 } from "./model.js";
 import { panelSvg, uiToml, parseParams, num } from "./exporter.js";
+import { buildAssetBundle } from "./raster.js";
+import { zipStore } from "./zip.js";
 
 const $ = (s) => document.querySelector(s);
 const state = {
@@ -294,8 +296,8 @@ $("#layerList").addEventListener("click", (e) => {
 
 /** 画布中心（毫米，取整）——新元素一律出现在这里 */
 const canvasCenter = () => [
-  Math.floor(state.doc.canvas.canvas_mm[0] / 2),
-  Math.floor(state.doc.canvas.canvas_mm[1] / 2),
+  +(state.doc.canvas.canvas_mm[0] / 2).toFixed(2),
+  +(state.doc.canvas.canvas_mm[1] / 2).toFixed(2),
 ];
 
 function addElement(kind, id) {
@@ -322,8 +324,8 @@ function addElementInner(kind, id) {
     el = factory.toggle(d, {
       pair: id,
       param: firstParam("toggle"),
-      x: cx - Math.floor(up.size_mm[0] / 2),
-      y: cy - Math.floor(up.size_mm[1] / 2),
+      x: +(cx - up.size_mm[0] / 2).toFixed(2),
+      y: +(cy - up.size_mm[1] / 2).toFixed(2),
     });
   } else if (kind === "led") el = factory.led(d, { asset: id, center: [cx, cy] });
   else if (kind === "button") el = factory.button(d, { asset: id, param: firstParam("button"), center: [cx, cy] });
@@ -334,8 +336,8 @@ function addElementInner(kind, id) {
     const layer = kind === "imported" ? a.kind : "silkscreen";
     el = factory.image(state.doc, {
       asset: id,
-      x: cx - Math.floor(a.size_mm[0] / 2),
-      y: cy - Math.floor(a.size_mm[1] / 2),
+      x: +(cx - a.size_mm[0] / 2).toFixed(2),
+      y: +(cy - a.size_mm[1] / 2).toFixed(2),
       layer,
       size: a.size_mm,
     });
@@ -444,7 +446,7 @@ window.addEventListener("pointerup", () => {
 window.addEventListener("keydown", (ev) => {
   if (ev.target.matches("input, textarea, select")) return;
   const els = selectedElements();
-  const step = ev.shiftKey ? 1 : 0.1;
+  const step = ev.shiftKey ? 1 : 0.1; // 浮点毫米
   const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[ev.key];
   if (nudge && els.length && els.every((e) => canEdit(e))) {
     commit();
@@ -490,7 +492,7 @@ function renderInspector() {
     ].join("");
   };
   const numInput = (label, key, obj = el, opts = {}) =>
-    `<div class="row"><label>${label}</label><input type="number" step="${opts.step ?? 1}" data-key="${key}" ${
+    `<div class="row"><label>${label}</label><input type="number" step="${opts.step ?? 0.1}" data-key="${key}" ${
       opts.obj ? `data-obj="${opts.obj}"` : ""
     } value="${obj?.[key] ?? 0}"/></div>`;
 
@@ -531,7 +533,7 @@ function renderInspector() {
       body += numInput("中心 y", 1, el.center, { obj: "center" }).replace('data-key="1"', 'data-key="1" data-vec="center"');
       // 尺寸由素材决定（命中半径 = 贴图宽/2），不给调
       body += `<div class="row"><label>尺寸</label><span style="flex:1;font-size:11.5px;color:#6b6156">${el.image_size[0].toFixed(1)} × ${el.image_size[1].toFixed(1)} mm（随素材）</span></div>`;
-      body += numInput("行程 °", "travel_deg", el, { step: 5 });
+
       body += `<div class="row"><label>素材</label><select data-key="asset">${byKind("knob")
         .map((a) => `<option ${a.id === el.asset ? "selected" : ""}>${a.id}</option>`)
         .join("")}</select></div>`;
@@ -645,17 +647,17 @@ function onInspectorInput(ev) {
   const d = state.doc;
   const el = d.elements.find((e) => e.id === state.selection[0]);
 
-  // 坐标一律**向下取整**（毫米整数，做面板时对位更可靠）
-  const int = (v) => Math.floor(Number(v));
+  // 坐标是**浮点毫米**（拖动已禁用，画布上按输入精确排布；早期为了 0.5mm 拖放栅格才取整）
+  const flt = (v) => Number(v);
 
   if (t.dataset.canvas !== undefined) {
     const key = t.dataset.canvas;
     if (key === "0" || key === "1") {
-      d.canvas.canvas_mm[Number(key)] = int(t.value);
+      d.canvas.canvas_mm[Number(key)] = flt(t.value);
       d.canvas.window_px = d.canvas.canvas_mm.map((v) => Math.round(v * 6));
     } else if (key === "bg") d.canvas.background = t.value;
     else if (key === "ink") d.canvas.ink = t.value;
-    else if (key === "px") d.canvas.px_per_mm = int(t.value);
+    else if (key === "px") d.canvas.px_per_mm = flt(t.value);
     else if (key === "preset") {
       const p = PRESETS[t.value];
       if (p) {
@@ -675,17 +677,17 @@ function onInspectorInput(ev) {
 
   if (t.dataset.vec) {
     // center / pivot 的分量
-    el[t.dataset.vec][Number(key)] = int(t.value);
+    el[t.dataset.vec][Number(key)] = flt(t.value);
     if (t.dataset.vec === "center" || t.dataset.vec === "pivot") {
       if (el.kind === "toggle" && t.dataset.vec === "pivot") syncTogglePivot(el);
     }
   } else if (key === "x" || key === "y" || key === "y_up") {
-    el[key] = int(t.value);
+    el[key] = flt(t.value);
     // 拨杆：y_down 与 pivot 必须跟着（六边形中心补偿）
     if (el.kind === "toggle") syncTogglePivot(el);
   } else if (key === "w" || key === "h") {
-    el[key] = int(t.value);
-  } else if (["radius", "press_scale", "travel_deg", "rot", "rx", "margin"].includes(key)) {
+    el[key] = flt(t.value);
+  } else if (["radius", "press_scale", "rot", "rx", "margin"].includes(key)) {
     el[key] = Number(t.value);
   } else if (key === "strokeWidth") {
     el[key] = Number(t.value);
@@ -818,6 +820,32 @@ $("#btnExport").addEventListener("click", () => {
   $("#expSummary").textContent = `${state.doc.name}：${state.doc.elements.length} 个元素，${state.doc.canvas.canvas_mm.join(" × ")} mm / ${state.doc.canvas.px_per_mm} px/mm`;
   $("#expProblems").textContent = problems.length ? `${problems.length} 个校验问题（导出仍会写文件，但插件可能跑不起来）：${problems.join("；")}` : "";
   $("#expCmd").textContent = `node scripts/export.mjs ${slug(state.doc.name)}.box.json --out <插件项目>/assets`;
+  // 一键素材包：ui.toml + panel.svg + panel.png + 全部贴图 + 设计文件
+  $("#expZip").onclick = async () => {
+    const btn = $("#expZip");
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "打包中…";
+    try {
+      const files = await buildAssetBundle(state.doc, mergedAssets(state.doc, state.assets), {
+        uiToml: plan,
+        boxJson: save(state.doc),
+      });
+      const zip = zipStore(files);
+      const url = URL.createObjectURL(zip);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slug(state.doc.name)}-assets.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      $("#stHint").textContent = `已打包 ${files.length} 个文件（PNG 由浏览器栅格化，12 px/mm）`;
+    } catch (err) {
+      $("#expProblems").textContent = `打包失败：${err.message}`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  };
   $("#expToml").onclick = () => download("ui.toml", plan);
   $("#expSvg").onclick = () => download("panel.svg", panelSvg(state.doc, state.assets, { controls: false }));
   $("#dlgExport").showModal();
@@ -880,8 +908,8 @@ if (query.has("selftest")) {
     field.value = String(before + 12.7);
     field.dispatchEvent(new Event("input", { bubbles: true }));
     const after = knob.center[0];
-    // 小数要向下取整
-    return after === Math.floor(before + 12.7) ? true : `stuck:${before}->${after}`;
+    // 坐标是浮点毫米：输入多少就是多少（不再取整）
+    return Math.abs(after - (before + 12.7)) < 1e-6 ? true : `stuck:${before}->${after}`;
   })();
 
   // 导入外部 SVG 的整条链路（用户报过 size_mm 崩溃）
@@ -898,9 +926,36 @@ if (query.has("selftest")) {
     }
   })();
 
+  // 素材包：浏览器 canvas 栅格化 + zip 打包（用户报过"缺件"）
+  const bundle = { files: null, pngOk: null };
+  try {
+    bundle.files = await buildAssetBundle(state.doc, mergedAssets(state.doc, state.assets), {
+      uiToml: uiToml(state.doc),
+      boxJson: save(state.doc),
+    });
+    const png = bundle.files.find((f) => f.name === "panel.png").data;
+    // PNG 签名 + IHDR 里的宽高
+    const dv = new DataView(png.buffer);
+    const sig = png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47;
+    const w = dv.getUint32(16);
+    const h = dv.getUint32(20);
+    const wantW = Math.round(state.doc.canvas.canvas_mm[0] * state.doc.canvas.px_per_mm);
+    bundle.pngOk = sig && Math.abs(w - wantW) <= 1 ? true : `sig=${sig} ${w}x${h} want ${wantW}`;
+  } catch (e) {
+    bundle.pngOk = e.message;
+  }
+
+  // ?probe=1：把浏览器栅格化出来的 panel.png 贴到画布上，肉眼/截图核对
+  if (query.has("probe") && bundle.files) {
+    const png = bundle.files.find((f) => f.name === "panel.png").data;
+    const url = URL.createObjectURL(new Blob([png], { type: "image/png" }));
+    $("#stage").innerHTML = `<img src="${url}" style="width:100%;height:100%;display:block" alt="panel.png"/>`;
+  }
+
   const ok =
     added === 3 &&
     importOk === true &&
+    bundle.pngOk === true &&
     moved &&
     inputOk === true &&
     toml.includes("[[ui.knobs]]") &&
@@ -908,5 +963,5 @@ if (query.has("selftest")) {
     toml.includes("[[ui.leds]]") &&
     svg.startsWith("<svg") &&
     svg.includes('data-control="knob"');
-  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} input=${inputOk} import=${importOk} toml=${toml.length}B svg=${svg.length}B`;
+  $("#stHint").textContent = `SELFTEST ${ok ? "ok" : "FAIL"} added=${added} moved=${moved} input=${inputOk} import=${importOk} bundle=${bundle.files?.length ?? 0} png=${bundle.pngOk} toml=${toml.length}B svg=${svg.length}B`;
 }

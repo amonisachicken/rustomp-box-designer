@@ -8,6 +8,9 @@ import { layerOf, bbox, ledRadius, buttonRadius } from "./model.js";
 
 const M = 25.4 / 72; // pt → mm
 
+/** 旋钮行程写死 270°（不给用户调：指针朝上 = 0.5 是这个角度的前提） */
+export const KNOB_TRAVEL_DEG = 270;
+
 /** 数字格式化：最多 3 位小数，去掉尾随 0（TOML/SVG 都要稳定文本，便于 diff） */
 export function num(v) {
   if (!Number.isFinite(v)) throw new Error(`非有限数：${v}`);
@@ -133,7 +136,7 @@ function ledCircle(el, lit, bypassed = false) {
 function knobSprite(el, assets, values) {
   const [w, h] = el.image_size;
   const value = values[el.id] ?? el.value ?? 0.5;
-  const angle = (value - 0.5) * el.travel_deg; // 指针朝上 ⇔ 参数 0.5（E60 契约）
+  const angle = (value - 0.5) * KNOB_TRAVEL_DEG; // 指针朝上 ⇔ 参数 0.5（E60 契约）
   return withAttrs(
     placeAsset({
       assetId: el.asset,
@@ -250,8 +253,8 @@ export function uiToml(doc) {
     L.push(`asset = "${esc(el.asset)}"`);
     L.push(`image_size = ${vec(el.image_size)}`);
     L.push(`render = "rotate"`);
-    L.push(`travel_deg = ${num(el.travel_deg)}`);
-    L.push(`drag_full_range_px = ${num(el.drag_full_range_px)}`);
+    L.push(`travel_deg = ${KNOB_TRAVEL_DEG}`);
+    L.push(`drag_full_range_px = 260`);
   }
   for (const el of doc.elements.filter((e) => e.kind === "led")) {
     L.push("");

@@ -159,8 +159,11 @@
     <dialog id="dlgExport">
       <h2>导出</h2>
       <p id="expSummary"></p>
-      <p><button id="expToml">下载 ui.toml</button> <button id="expSvg">下载 panel.svg</button></p>
-      <p style="margin-bottom: 4px">PNG（12 px/mm）与贴图由 CLI 用 Inkscape 栅格化，去插件项目里跑：</p>
+      <p>
+        <button id="expZip" class="primary" title="ui.toml + panel.svg + panel.png + 全部贴图 + 设计文件">⬇ 下载素材包（zip）</button>
+      </p>
+      <p style="font-size:11.5px;color:#6b6156">或者单件下载：<button id="expToml">ui.toml</button> <button id="expSvg">panel.svg</button></p>
+      <p style="margin-bottom: 4px">素材包里的 PNG 由浏览器 canvas 栅格化（12 px/mm）；若想要 Inkscape 出的"权威"版本，跑 CLI：</p>
       <code id="expCmd"></code>
       <p id="expProblems" class="warn"></p>
       <p style="text-align: right"><button id="expClose">关闭</button></p>

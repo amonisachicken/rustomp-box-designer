@@ -71,7 +71,7 @@ export const factory = {
    * **尺寸由素材决定**，不给用户调：命中半径 = 贴图宽/2，导出时算出来。
    * （以前留了个 `radius` 输入框，改它只会让点击区和美术对不上，已删。）
    */
-  knob(doc, { asset = "knob_round_dark", param = "", center = [30, 30], travel_deg = 270 } = {}) {
+  knob(doc, { asset = "knob_round_dark", param = "", center = [30, 30] } = {}) {
     const a = byId(asset);
     return {
       id: uid(doc, "k"),
@@ -80,8 +80,6 @@ export const factory = {
       param,
       center,
       image_size: a.size_mm,
-      travel_deg,
-      drag_full_range_px: 260,
     };
   },
 
@@ -428,7 +426,7 @@ export function validate(doc) {
         }
       }
     }
-    if (el.kind === "knob" && el.travel_deg <= 0) problems.push(`${el.id}：travel_deg 必须 > 0`);
+
 
     if (el.kind === "frame") continue; // 贴画布，天然不越界
     const b = bbox(el, doc.canvas.canvas_mm);

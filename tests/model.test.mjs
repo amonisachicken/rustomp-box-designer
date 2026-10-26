@@ -40,11 +40,11 @@ test("新建文档的窗口 = 面板 mm × 6 px/mm", () => {
   assert.deepEqual(d.canvas.window_px, [Math.round(d.canvas.canvas_mm[0] * 6), Math.round(d.canvas.canvas_mm[1] * 6)]);
 });
 
-test("旋钮：尺寸只由素材决定（没有 radius 字段），指针朝上 = 0.5", () => {
+test("旋钮：尺寸只由素材决定，行程写死 270°（模型里不再有字段）", () => {
   const d = doc();
   const k = factory.knob(d, { param: "gain" });
   assert.equal(k.radius, undefined, "旋钮不该再有 radius（命中半径 = 贴图宽/2）");
-  assert.equal(k.travel_deg, 270);
+  assert.equal(k.travel_deg, undefined, "行程写死 270°，不再进模型/面板");
   const asset = byId("knob_round_dark").size_mm;
   assert.deepEqual(k.image_size, asset);
   assert.equal(bbox(k).w, asset[0]);
