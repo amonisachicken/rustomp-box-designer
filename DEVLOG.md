@@ -272,6 +272,30 @@ el = factory.image(..., a.size_mm[0] ...)   // 💥
 
 ---
 
+## E11 暂存到服务端：把"下次接着画"变成默认（2026-10-29）
+
+**背景**：box-designer 之前只有「保存」= 下载 `.box.json`；换一台机器/清下载目录就丢上下文。
+circuit-designer 的「保存」是写服务端缓存并在启动时恢复（`designer.save` / `designer.last`），
+这次把这套语义搬过来，但保持本仓"零依赖、无构建"。
+
+**做法**：
+
+- `scripts/server.py`（Python 标准库）替代 `python3 -m http.server`：静态文件 + `POST/GET /api/draft`；
+- `src/backend.js` 只有 `draft.save()` / `draft.last()`；失败静默降级（静态托管时按钮提示不可用）；
+- 顶栏「暂存」：写 `<repo>/.cache/designs/<清洗后的名字>.box.json` + `last` 指针，清空撤销/重做；
+- 启动自动恢复 `last`；`?demo=1` / `?selftest=1` / `?fresh=1` 跳过；
+- 缓存目录 `.cache/designs` 进 `.gitignore`；`BOXD_DATA` 可覆盖；`/.cache` 不被静态服务暴露。
+
+**验证**：
+
+| 项 | 结果 |
+|---|---|
+| `tests/draft.test.mjs`（真起 Python 服务） | POST → 文件名清洗（`测试/面板` → `测试_面板`）、`last` 指针、GET 回读、坏 JSON 不崩服务 |
+| Chromium headless（CDP） | 打开 `?fresh=1` → 改名 → 点「暂存」→ 状态栏显示已暂存；**不带参数重新打开** → 自动恢复名字/文档 |
+| `./scripts/check.sh` | 素材清单 / 单测（含暂存 API）/ 导出 / 尺寸全绿 |
+
+**边界**：静态托管没有后端；草稿只有"上一次一份"，不做多草稿列表、冲突合并或版本迁移。
+
 ## 复盘：这一夜最值钱的六条
 
 | # | 结论 | 出处 |

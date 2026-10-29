@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 本地起静态服务（浏览器不让 file:// 加载 ES modules）
+# 本地起开发服务（静态文件 + 暂存 API）
 # 用法：./scripts/dev.sh [端口]，默认 8765
+# 暂存目录默认 <repo>/.cache/designs，可用 BOXD_DATA 覆盖
 set -euo pipefail
 PORT="${1:-8765}"
 cd "$(dirname "$0")/.."
-echo "→ http://localhost:${PORT}/"
-exec python3 -m http.server "${PORT}" --bind 127.0.0.1
+exec python3 scripts/server.py "${PORT}"

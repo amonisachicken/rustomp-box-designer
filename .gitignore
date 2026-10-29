@@ -10,8 +10,15 @@ target/
 /tmp/
 *.preview.png
 
+# Python（本地 server 的字节码缓存）
+__pycache__/
+*.pyc
+
 # 系统/编辑器
 .DS_Store
 
 # 导出产物（下载件），不入库
 *-assets.zip
+
+# 服务端暂存的设计稿
+/.cache/

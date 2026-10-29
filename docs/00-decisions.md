@@ -19,7 +19,7 @@
 ## D-001 技术栈：零依赖的浏览器原生 ES modules + 原生 SVG
 
 **结论**：前端是纯 HTML + ES modules + 原生 SVG，**不装任何 npm 包**（无 Vite/框架）；
-本地开发用 `python3 -m http.server` 起静态服务。导出走 Node 脚本（`scripts/export.mjs`）+ Inkscape 栅格化。
+本地开发用 `scripts/dev.sh`（Python 标准库：静态文件 + 可选的暂存 API）起服务。导出走 Node 脚本（`scripts/export.mjs`）+ Inkscape 栅格化。
 
 **理由**
 
@@ -359,3 +359,27 @@ panel.png   变了（底图含新 logo）
 
 这条经验值得记住：**美术改动只动 `panel.png`，控件改动只动 `[ui]`** —— 两者互不牵连，
 所以"重新导出一次"不会顺手把别人的布局改动踩掉。
+
+
+---
+
+## D-017 暂存到服务端：只做本地开发态，不改变导出链路（2026-10-29）
+
+**结论**：顶栏新增「暂存」按钮，把当前 `.box.json` 写到本地开发服务的缓存；
+启动时自动恢复上次暂存。语义对齐 `rustomp-circuit-designer` 的 `designer.save/last`。
+
+| 项 | 内容 |
+|---|---|
+| API | `POST /api/draft { name, doc }` → `<repo>/.cache/designs/<name>.box.json` + `last` 指针；`GET /api/draft` 读回 |
+| 服务 | `scripts/server.py`（Python 标准库，随 `./scripts/dev.sh` 启动；无 npm/Rust 依赖） |
+| 前端 | `src/backend.js`：`draft.save()` / `draft.last()`；失败只在状态栏提示 |
+| 自动恢复 | 启动时读 `last`；`?demo=1` / `?selftest=1` / `?fresh=1` 不恢复 |
+| 保存语义 | 写一份，并**清空撤销/重做**（与 circuit-designer、breadspice 一致） |
+| 缓存目录 | 默认 `.cache/designs`（已 gitignore），`BOXD_DATA` 可覆盖 |
+| 安全/健壮 | 名字清洗路径分隔符与危险字符；原子写；请求体上限 8 MB；`/.cache` 不经静态服务暴露 |
+
+**为什么不做成 Rust 后端**：本仓的 D-001 是"零依赖、无构建"；暂存只是把 JSON 写到本地，
+用 Python 标准库足够。导出/预览仍是纯前端 + Node CLI，不受影响。
+
+**边界**：静态托管（GitHub Pages 等）没有这个 API，按钮会提示"暂存失败（用 ./scripts/dev.sh）"；
+草稿不做版本迁移/冲突合并，只是"上次一份"。

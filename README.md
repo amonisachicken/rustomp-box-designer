@@ -24,10 +24,11 @@
 
 ```bash
 ./scripts/dev.sh          # → http://localhost:8765/   零依赖：只要 python3 + Node(测试用)
-./scripts/check.sh        # 素材清单 / 41 个单测 / 导出 / 产物尺寸，一条命令全绿
+./scripts/check.sh        # 素材清单 / 单测（含暂存 API）/ 导出 / 产物尺寸，一条命令全绿
 ```
 
 没有 `npm install`，没有构建步骤：`index.html` + 原生 ES modules + 原生 SVG。
+`scripts/dev.sh` 同时提供静态文件与一个**可选的本地暂存 API**（Python 标准库）。
 
 想直接看东西：`http://localhost:8765/?demo=1`（载入示例面板）。
 
@@ -50,10 +51,26 @@
 | **删除** | `⌫` |
 | **编辑 / 预览** | `Tab` 或顶栏按钮 |
 | **导入 SVG** | 先聚焦「装饰」或「丝印」→「＋ 导入 SVG…」→ 手选类别 |
+| **暂存** | 顶栏「暂存」→ 写到本地服务端缓存；下次打开自动恢复（静态托管时不可用） |
 | **导出** | 顶栏「导出」→ **下载素材包（zip）**（8 个文件，PNG 由浏览器栅格化） |
 
 **拖动是刻意关掉的**：旧版的"0.5 mm 栅格 + 吸附 + 每帧整块重渲染"手感不可控，
 现在移动只有三条精确路径（方向键 / 数值输入 / 对齐按钮）。
+
+### 暂存（服务端草稿）
+
+顶栏「暂存」把当前 `.box.json` 写到本地服务端：
+
+```text
+POST /api/draft { name, doc }  → <repo>/.cache/designs/<name>.box.json + last 指针
+GET  /api/draft               → 上次暂存（启动时自动恢复）
+```
+
+- 与 `rustomp-circuit-designer` 的「保存到服务端」同语义：**写一份、清空撤销/重做**；
+- 缓存目录可用 `BOXD_DATA=/path` 覆盖；
+- 文件名的路径分隔符/危险字符会被清洗；`last` 指针丢失时回退到最新一份；
+- 用静态服务器（例如 GitHub Pages）打开时没有这个 API：按钮会在状态栏提示失败，画图/导出不受影响；
+- `?fresh=1` 可跳过启动时的自动恢复。
 
 ### 预览（L1）
 
@@ -137,13 +154,15 @@ src/exporter.js         面板 SVG / 贴图清单 / [assets]+[ui] TOML（**纯�
 src/embed.js            素材内联：展开 CSS 类、删 id、嵌套 viewBox 裁剪
 src/raster.js           浏览器 canvas 栅格化 SVG → PNG（素材包用）
 src/zip.js              零依赖 store 模式 zip 写入（带 CRC32）
+src/backend.js          服务端暂存客户端（draft.save / draft.last）
 src/assets.gen.js       素材清单（由 scripts/gen-assets.mjs 从 viewBox 自动生成，入库可 diff）
 assets/                 3 旋钮 / 20 丝印标签 / 3 LED / 6 开关 + 脚踏（含按住态）
 scripts/gen-assets.mjs  扫素材 → 清单（--check 防漂移）
 scripts/export.mjs      .box.json → SVG + PNG(Inkscape) + ui.toml
 scripts/preview.mjs     渲染带控件的预览图（＝宿主里的样子）
 scripts/check.sh        一条命令跑完全部校验
-tests/                  node --test（41 个）：内联 / 模型 / 导出 / zip
+scripts/server.py       本地开发服务：静态文件 + /api/draft 暂存 API（Python 标准库）
+tests/                  node --test：内联 / 模型 / 导出 / zip / 暂存 API
 examples/sparklin.box.json   用设计器复刻的真实面板
 docs/                   契约、运行时语义、素材规范、决策记录、交接手册
 ```
@@ -153,6 +172,7 @@ docs/                   契约、运行时语义、素材规范、决策记录�
 | 参数 | 作用 |
 |---|---|
 | `?demo=1` | 载入 `examples/sparklin.box.json` |
+| `?fresh=1` | 不恢复服务端暂存，从空白面板开始 |
 | `?focus=knobs` | 启动即聚焦某图层（`knobs`/`leds`/`artwork`…） |
 | `?mode=preview` | 启动即进预览 |
 | `?selftest=1` | 无头冒烟：加元素 / 输入 / 导入 / 素材包，结果打在状态栏（给 CI 用） |

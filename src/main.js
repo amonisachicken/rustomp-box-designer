@@ -32,6 +32,7 @@ import {
   buttonRadius,
 } from "./model.js";
 import { panelSvg, uiToml, parseParams, num } from "./exporter.js";
+import { draft } from "./backend.js";
 import { buildAssetBundle } from "./raster.js";
 import { zipStore } from "./zip.js";
 
@@ -802,6 +803,25 @@ $("#btnSave").addEventListener("click", () => {
   download(`${slug(state.doc.name)}.box.json`, save(state.doc), "application/json");
 });
 
+/** 暂存到本地服务端（./scripts/dev.sh 提供的 /api/draft）；与 circuit-designer 同语义 */
+$("#btnStash").addEventListener("click", async () => {
+  const btn = $("#btnStash");
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "暂存中…";
+  try {
+    const r = await draft.save(state.doc.name, state.doc);
+    state.past.length = 0;
+    state.future.length = 0;
+    $("#stHint").textContent = `已暂存到服务端：${r.file}（${(r.bytes / 1024).toFixed(1)} KB，撤销记录已清空）`;
+  } catch (e) {
+    $("#stHint").textContent = `暂存失败：${e instanceof Error ? e.message : String(e)}（用 ./scripts/dev.sh 启动本地服务）`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+});
+
 function download(name, text, type = "text/plain") {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement("a");
@@ -863,15 +883,36 @@ $("#insp").addEventListener("change", (e) => {
 });
 
 // ---------- 启动 ----------
+const query = new URLSearchParams(location.search);
+
+/** 启动时读回服务端暂存；失败（静态托管 / 服务没起）静默当首次打开 */
+async function restoreLast() {
+  try {
+    const last = await draft.last();
+    if (!last?.doc) return null;
+    const loaded = load(JSON.stringify(last.doc));
+    loaded.name = last.name || loaded.name;
+    state.doc = loaded;
+    state.selection = [];
+    state.past.length = 0;
+    state.future.length = 0;
+    return last;
+  } catch {
+    return null;
+  }
+}
+
 await loadAssets();
+const restored = query.has("demo") || query.has("fresh") || query.has("selftest") ? null : await restoreLast();
 renderLibrary();
 renderLayers();
 render();
 renderInspector();
 setMode("edit");
-$("#stHint").textContent = "先点左下「图层」里的一行聚焦（之后该层元素才能选中/编辑；双击素材库新建）";
+$("#stHint").textContent = restored
+  ? `已恢复服务端暂存：${restored.file}（${restored.name}）`
+  : "先点左下「图层」里的一行聚焦（之后该层元素才能选中/编辑；双击素材库新建）";
 
-const query = new URLSearchParams(location.search);
 if (query.has("demo")) {
   const r = await fetch("examples/sparklin.box.json");
   state.doc = load(await r.text());
