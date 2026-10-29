@@ -2,7 +2,7 @@
 
 > 这是设计器**唯一**要产出的东西（外加 PNG 素材）。
 > 字段全部来自 `rustomp` 仓库的 `crates/rustomp-gui` 与 `template/rustomp.toml`；
-> 本文档只记录**现状**，不发明新字段（要加字段见 `04-open-questions.md`）。
+> 本文档只记录**现状**，不发明新字段（要加字段先看 `00-decisions.md` 与 `history/open-questions.md`）。
 
 ---
 

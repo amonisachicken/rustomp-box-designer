@@ -1,9 +1,10 @@
 # DEVLOG — rustomp-box-designer
 
-面板设计器的开发日志。按"一次会话一组条目"记录：做了什么、为什么、踩了什么坑。
+面板设计器的**历史**开发记录。按"一次会话一组条目"记录：做了什么、为什么、踩了什么坑。
 
 > 数字都来自当场实测（`./scripts/check.sh`、`node --test`、无头 Chromium `?selftest=1`）。
-> 决策的**结论**在 `docs/00-decisions.md`，这里记**过程**。
+> 决策的**结论**在 `docs/00-decisions.md`；**当前状态**在 [`docs/status.md`](docs/status.md)；
+> 过时内容归档到 [`docs/history/`](docs/history/README.md)。本文件只追加，不改旧条目。
 
 ---
 
